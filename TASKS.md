@@ -8,7 +8,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Repo hygiene: `.gitignore`, TASKS.md, BUGS.md, README stub
 - [x] Backend scaffold (uv, FastAPI, PydanticAI, pytest, ruff, pyright) + smoke test
 - [x] Frontend scaffold (bun, Vite, React, TS, Tailwind, shadcn/ui)
-- [ ] `justfile`: `dev`, `test`, `eval`, `lint`
+- [x] `Makefile`: `install`, `dev`, `test`, `lint`, `format`, `build` (`eval` added in Phase 8)
 
 ## Phase 1 — Foundations
 - [ ] `core/`: injectable Clock (real + fake), config from env, ID helpers
