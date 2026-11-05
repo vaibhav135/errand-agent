@@ -20,15 +20,27 @@ RULES: dict[str, set[str]] = {
     "core": set(),
     "store": {"core"},
     "tracing": {"core"},
-    "mocks": {"core", "store"},
+    # The provider contract (ToolEnv, models, errors). Everything talks to providers
+    # through it; only `api` (app wiring) ever touches the concrete mock.
+    "providers": {"core"},
+    "mocks": {"core", "store", "providers"},
     "memory": {"core", "store", "tracing"},
-    # TODO(Phase 3): narrow "mocks" to the ToolEnv interface module once it exists.
-    "workflow": {"core", "store", "tracing", "memory", "mocks"},
+    "workflow": {"core", "store", "tracing", "memory", "providers"},
     # proactive detects provider events and starts runs; it never needs the LLM, and
     # the agent never needs the monitor, so neither imports the other.
-    "proactive": {"core", "store", "tracing", "memory", "mocks", "workflow"},
-    "agent": {"core", "store", "tracing", "memory", "mocks", "workflow"},
-    "api": {"core", "store", "tracing", "memory", "mocks", "workflow", "agent", "proactive"},
+    "proactive": {"core", "store", "tracing", "memory", "providers", "workflow"},
+    "agent": {"core", "store", "tracing", "memory", "providers", "workflow"},
+    "api": {
+        "core",
+        "store",
+        "tracing",
+        "providers",
+        "mocks",
+        "memory",
+        "workflow",
+        "agent",
+        "proactive",
+    },
 }
 
 

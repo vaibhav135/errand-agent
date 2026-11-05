@@ -17,11 +17,14 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Import-direction test (`workflow/` must not import `agent/` or `api/`)
 
 ## Phase 2 — Mock world
-- [ ] `mock_world.db`, seeded providers (incl. a prompt-injection review), scenario config + seeded RNG
-- [ ] `search_providers`, `get_provider`
-- [ ] `hold_slot` (10-min expiry, configurable price drift)
-- [ ] `book` (70/15/15 outcomes, timeout-after-success, `hold_expired`) + `get_booking_status`
-- [ ] `cancel` (first call 503), `reschedule` (`slot_conflict`), `list_bookings`
+- [x] `providers/` contract layer (`ToolEnv`, models, errors)
+- [x] `mock_world.db` schema, seeded providers, 14 prompt-injection fixtures, keyed RNG
+- [x] Scenario config (scripted outcomes, weights, price drift, slot conflicts)
+- [x] `search_providers`, `get_provider`
+- [x] `hold_slot` (10-min expiry, configurable price drift)
+- [x] `book` (70/15/15 outcomes, timeout-after-success, `hold_expired`) + `get_booking_status`
+- [x] `cancel` (first call 503), `reschedule` (`slot_conflict`), `list_bookings`
+- [x] `MockControl.cancel_by_provider` (simulated provider event for Phase 6)
 
 ## Phase 3 — Workflow core
 - [ ] First `agent.db` migration; create + migrate `agent.db` at app startup
