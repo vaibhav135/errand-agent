@@ -12,7 +12,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 
 ## Phase 1 — Foundations
 - [x] `core/`: injectable Clock (real + fake), config from env, ID helpers
-- [ ] `store/`: SQLite connection (WAL), SQL migrations runner, `agent.db`
+- [x] `store/`: SQLite connection (WAL), transactions, SQL migrations runner
 - [ ] `tracing/`: JSONL trace recorder (state transitions, model calls, tools, latency, tokens, cost)
 - [ ] Import-direction test (`workflow/` must not import `agent/` or `api/`)
 
@@ -24,6 +24,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [ ] `cancel` (first call 503), `reschedule` (`slot_conflict`), `list_bookings`
 
 ## Phase 3 — Workflow core
+- [ ] First `agent.db` migration; create + migrate `agent.db` at app startup
 - [ ] State model + explicit transitions
 - [ ] Approval gate: approval bound to hash(action, provider, slot, price); invalidated on change
 - [ ] Booking executor: persisted idempotency key, timeout → `get_booking_status`, no duplicate bookings
