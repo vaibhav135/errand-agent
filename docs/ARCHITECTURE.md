@@ -24,12 +24,20 @@ the enforcement mechanism. Each layer may import only the layers listed:
 | `store/`, `tracing/` | `core` | built |
 | `mocks/` | `core`, `store` (the "external world" knows nothing of the agent) | Phase 2 |
 | `memory/` | `core`, `store`, `tracing` | Phase 4 |
-| `workflow/` | `core`, `store`, `tracing`, `memory`, `mocks` (interface only) | Phase 3 |
-| `agent/` | everything except `api` | Phase 5 |
+| `workflow/` | `core`, `store`, `tracing`, `memory`, `mocks` (interface only, narrowed in Phase 3) | Phase 3 |
+| `proactive/` | `core`, `store`, `tracing`, `memory`, `mocks`, `workflow` | Phase 6 |
+| `agent/` | `core`, `store`, `tracing`, `memory`, `mocks`, `workflow` | Phase 5 |
 | `api/` | everything | Phase 7 |
 
 If every layer obeys its own list, indirect violations (e.g. `workflow → memory →
-agent`) are impossible too. Enforced by `tests/unit/test_layering.py` (next commit).
+agent`) are impossible too. `proactive` and `agent` don't import each other: the monitor
+only detects events and starts runs, which the orchestrator handles like any other.
+
+**Enforced by** `backend/tests/unit/test_layering.py`. It parses every module with `ast`
+(so aliased, relative and function-local imports count, while docstrings, comments and
+strings that merely mention a module don't), and fails if a layer imports outside its
+list or if a new top-level folder has no rule yet. Not caught: `importlib` with a
+computed string, which would be deliberate evasion.
 
 ## Components
 
