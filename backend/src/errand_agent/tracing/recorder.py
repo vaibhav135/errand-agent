@@ -40,6 +40,7 @@ from typing import Any
 
 from errand_agent.core.clock import Clock
 from errand_agent.core.ids import IdGen
+from errand_agent.tracing.sanitize import sanitize
 
 logger = logging.getLogger(__name__)
 
@@ -192,6 +193,7 @@ class RunTrace:
 
     def _emit(self, type: str, data: dict[str, Any], ts: datetime | None = None) -> None:
         self._check_can_emit(type, data)
+        data = sanitize(data)  # every payload, so no call site can forget
         self._accumulate(type, data)
         event = TraceEvent(
             ts=ts or self._clock.now(),

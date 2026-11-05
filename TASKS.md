@@ -13,7 +13,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 ## Phase 1 — Foundations
 - [x] `core/`: injectable Clock (real + fake), config from env, ID helpers
 - [x] `store/`: SQLite connection (WAL), transactions, SQL migrations runner
-- [ ] `tracing/`: JSONL trace recorder (state transitions, model calls, tools, latency, tokens, cost)
+- [x] `tracing/`: JSONL trace recorder (state transitions, model calls, tools, latency, tokens, cost)
 - [ ] Import-direction test (`workflow/` must not import `agent/` or `api/`)
 
 ## Phase 2 — Mock world
