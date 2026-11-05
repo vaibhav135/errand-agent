@@ -24,6 +24,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] `hold_slot` (10-min expiry, configurable price drift)
 - [x] `book` (70/15/15 outcomes, timeout-after-success, `hold_expired`) + `get_booking_status`
 - [x] `cancel` (first call 503), `reschedule` (`slot_conflict`), `list_bookings`
+- [x] `MockControl.cancel_by_provider` (simulated provider event for Phase 6)
 
 ## Phase 3 — Workflow core
 - [ ] First `agent.db` migration; create + migrate `agent.db` at app startup

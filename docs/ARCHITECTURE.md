@@ -210,6 +210,12 @@ reading the environment would silently miss keys that live in `.env`.
       (another booking, another slot) is `idempotency_key_reused`.
     - `list_bookings`: the user's bookings, past and upcoming, ordered by slot.
     - `MockWorld` satisfies `ToolEnv`; pyright checks this structurally.
+  - **Control plane** ([control.py](../backend/src/errand_agent/mocks/control.py)):
+    `MockControl(world).cancel_by_provider(booking_id, reason)` simulates a provider
+    cancelling (for tests and the demo). It is a separate object, never part of the
+    `ToolEnv` the agent receives, so it can't become a back door. The agent detects the
+    cancellation only through the contract (`list_bookings` / `get_booking_status`
+    show `cancelled_by_provider`); the `provider_events` log stays inside the mock.
   - **Scenarios** ([scenario.py](../backend/src/errand_agent/mocks/scenario.py)): by
     default `book` outcomes are keyed-random at the contract's 70 / 15 / 7.5 / 7.5
     (success / slot_taken / timeout-booked / timeout-not-booked); a retry is a new
