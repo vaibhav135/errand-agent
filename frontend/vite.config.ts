@@ -11,4 +11,9 @@ export default defineConfig({
     // TypeScript only type-checks the alias, Vite is what actually resolves it.
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
+  server: {
+    // Same-origin /api in dev: no CORS, and SSE streams pass straight through.
+    // No path rewrite: the backend itself serves under /api (see api/app.py).
+    proxy: { '/api': 'http://localhost:8000' },
+  },
 })
