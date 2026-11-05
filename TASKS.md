@@ -6,7 +6,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 
 ## Phase 0 — Setup
 - [x] Repo hygiene: `.gitignore`, TASKS.md, BUGS.md, README stub
-- [ ] Backend scaffold (uv, FastAPI, PydanticAI, pytest, ruff, pyright) + smoke test
+- [x] Backend scaffold (uv, FastAPI, PydanticAI, pytest, ruff, pyright) + smoke test
 - [ ] Frontend scaffold (bun, Vite, React, TS, Tailwind, shadcn/ui)
 - [ ] `justfile`: `dev`, `test`, `eval`, `lint`
 
