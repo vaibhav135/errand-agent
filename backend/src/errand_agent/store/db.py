@@ -43,6 +43,10 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     try:
         yield conn
     except BaseException:
-        conn.execute("ROLLBACK")
+        # SQLite may already have ended the transaction itself (RAISE(ROLLBACK),
+        # disk full, some I/O errors). A second ROLLBACK would then fail and
+        # replace the real error, so only roll back if one is still open. (BUG-1)
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
         raise
     conn.execute("COMMIT")

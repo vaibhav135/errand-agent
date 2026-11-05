@@ -57,7 +57,6 @@ def test_transaction_rolls_back_and_reraises_on_error(db_path: Path) -> None:
     assert not conn.in_transaction
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-1: ROLLBACK after SQLite auto-rollback masks error")
 def test_original_error_survives_when_sqlite_already_rolled_back(db_path: Path) -> None:
     # Some failures make SQLite end the transaction itself (RAISE(ROLLBACK) in a
     # trigger, disk full, some I/O errors). Our own ROLLBACK must not then fail
