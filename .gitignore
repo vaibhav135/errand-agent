@@ -1,0 +1,27 @@
+# Assignment brief (kept local, not part of the repo)
+Orange_Engineering_Assignment.pdf
+
+# Local Claude Code settings
+.claude/settings.local.json
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.coverage
+
+# Node / bun
+node_modules/
+dist/
+
+# Runtime data (SQLite DBs, run traces). Curated traces live in docs/traces/
+*.db
+*.db-wal
+*.db-shm
+backend/var/
+
+# Env / OS
+.env
+.DS_Store
