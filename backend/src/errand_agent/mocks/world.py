@@ -18,7 +18,14 @@ How:  - Bound to one calling user (like an API token): `hold_slot`/`book` take n
         not silently trimmed.
       - get_provider: details, all served areas and reviews *verbatim*, injection
         fixtures included (data is data); attack labels never leave the mock.
-      - All datetimes go through `utc_text` before touching the DB.
+      - hold_slot: the slot must be offered by the schedule, in the future, and not
+        taken by a confirmed booking or another user's active hold. Re-holding a
+        slot you already hold *replaces* your hold (new id, fresh 10 minutes,
+        re-quoted price; the old one ends now), so the workflow can refresh a
+        hold inside its expiry safety margin. Check and insert share one
+        BEGIN IMMEDIATE transaction, so two racing holds can't both win.
+      - All datetimes go through `utc_text` before touching the DB; datetimes
+        returned to callers are IST.
 """
 
 import json
@@ -28,12 +35,16 @@ from pathlib import Path
 
 from errand_agent.core.clock import Clock
 from errand_agent.core.ids import IdGen
-from errand_agent.mocks.scenario import Scenario
-from errand_agent.mocks.schedule import slot_schedule, utc_text
+from errand_agent.mocks.scenario import Scenario, quoted_price
+from errand_agent.mocks.schedule import IST, slot_schedule, utc_text
 from errand_agent.mocks.seed import AREAS, SERVICES, seed_world
 from errand_agent.providers.models import (
     Attributes,
     DateRange,
+    Held,
+    Hold,
+    HoldFailed,
+    HoldResult,
     ProviderDetails,
     ProviderFailed,
     ProviderOk,
@@ -46,12 +57,13 @@ from errand_agent.providers.models import (
     SearchResult,
     Service,
 )
-from errand_agent.store.db import connect
+from errand_agent.store.db import connect, transaction
 from errand_agent.store.migrate import migrate, migrations_for
 
-__all__ = ["MAX_SEARCH_DAYS", "MockWorld", "utc_text"]
+__all__ = ["HOLD_MINUTES", "MAX_SEARCH_DAYS", "MockWorld", "utc_text"]
 
 MAX_SEARCH_DAYS = 14
+HOLD_MINUTES = 10
 _AREA_BY_KEY = {area.casefold(): area for area in AREAS}
 
 
@@ -140,6 +152,68 @@ class MockWorld:
             (provider_id, provider_id, now),
         ).fetchall()
         return {r["slot"] for r in rows}
+
+    # --- hold_slot --------------------------------------------------------------------
+
+    async def hold_slot(self, provider_id: str, slot: datetime) -> HoldResult:
+        now = self._clock.now()
+        with transaction(self._conn):
+            row = self._conn.execute(
+                "SELECT price_inr FROM providers WHERE provider_id = ?", (provider_id,)
+            ).fetchone()
+            if row is None:
+                return HoldFailed(status="provider_not_found")
+
+            offered = slot_schedule(
+                provider_id, slot.astimezone(IST).date(), seed=self._scenario.seed
+            )
+            if slot <= now or slot not in offered or self._taken_by_others(provider_id, slot):
+                return HoldFailed(status="slot_unavailable")
+
+            # Re-holding your own slot replaces your hold: end it now.
+            self._conn.execute(
+                "UPDATE holds SET expires_at = ? WHERE provider_id = ? AND slot = ?"
+                " AND user_id = ? AND expires_at > ?"
+                " AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.hold_id = holds.hold_id)",
+                (utc_text(now), provider_id, utc_text(slot), self._user_id, utc_text(now)),
+            )
+            hold = Hold(
+                hold_id=self._ids.new("hold"),
+                provider_id=provider_id,
+                slot=slot.astimezone(IST),
+                quoted_price_inr=quoted_price(self._scenario, provider_id, row["price_inr"]),
+                expires_at=(now + timedelta(minutes=HOLD_MINUTES)).astimezone(IST),
+            )
+            self._conn.execute(
+                "INSERT INTO holds (hold_id, provider_id, slot, quoted_price_inr, expires_at,"
+                " created_at, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    hold.hold_id,
+                    provider_id,
+                    utc_text(slot),
+                    hold.quoted_price_inr,
+                    utc_text(hold.expires_at),
+                    utc_text(now),
+                    self._user_id,
+                ),
+            )
+        return Held(hold=hold)
+
+    def _taken_by_others(self, provider_id: str, slot: datetime) -> bool:
+        """A confirmed booking, or another user's unexpired, unbooked hold."""
+        now = utc_text(self._clock.now())
+        key = utc_text(slot)
+        return (
+            self._conn.execute(
+                "SELECT 1 FROM bookings WHERE provider_id = ? AND slot = ? AND status = 'confirmed'"
+                " UNION ALL"
+                " SELECT 1 FROM holds h WHERE h.provider_id = ? AND h.slot = ? AND h.user_id != ?"
+                " AND h.expires_at > ?"
+                " AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.hold_id = h.hold_id)",
+                (provider_id, key, provider_id, key, self._user_id, now),
+            ).fetchone()
+            is not None
+        )
 
     # --- get_provider -----------------------------------------------------------------
 

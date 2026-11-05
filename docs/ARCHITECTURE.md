@@ -182,6 +182,12 @@ reading the environment would silently miss keys that live in `.env`.
       trimmed silently.
     - `get_provider`: details, all areas and reviews **verbatim**, injections included;
       attack labels never leave the mock (a test scans every provider's payload).
+    - `hold_slot`: 10-minute hold on a slot the schedule offers, in the future, not
+      taken by a confirmed booking or another user's active hold; the quote includes
+      the scenario's price drift. **Re-holding your own slot replaces your hold**
+      (new id, fresh 10 minutes, re-quoted price; the old hold ends immediately), so
+      the workflow can refresh a hold inside its expiry safety margin. Check and
+      insert share one `BEGIN IMMEDIATE` transaction.
   - **Scenarios** ([scenario.py](../backend/src/errand_agent/mocks/scenario.py)): by
     default `book` outcomes are keyed-random at the contract's 70 / 15 / 7.5 / 7.5
     (success / slot_taken / timeout-booked / timeout-not-booked); a retry is a new
