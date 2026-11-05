@@ -101,6 +101,11 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 - **How:** see the run lifecycle below. Payloads are sanitized automatically (secrets
   redacted by key name, long strings truncated). Unknown model prices give
   `cost_usd: null` and `cost_complete: false`, never a silent zero.
+- **Cost table:** `PRICES` covers Anthropic, OpenAI and Google models, keyed by
+  PydanticAI model string. Prices are effective-dated (e.g. Gemini 4 Argon doubles on
+  2026-12-01), and `estimate_cost(..., on=clock.now().date())` picks the one in force,
+  so announced changes need no code edit on the day. Only Anthropic and OpenAI SDKs
+  are installed; Gemini is priced but not runnable yet.
 
 ## Run lifecycle
 

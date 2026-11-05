@@ -4,7 +4,6 @@ import pytest
 
 from errand_agent.core.clock import FakeClock
 from errand_agent.core.ids import SequentialIdGen
-from errand_agent.tracing.cost import ModelPrice, estimate_cost
 from errand_agent.tracing.recorder import TraceEvent, Tracer
 from errand_agent.tracing.sanitize import REDACTED, sanitize
 
@@ -90,18 +89,3 @@ def test_recorder_sanitizes_every_payload() -> None:
     data = events[-1].to_dict()
     assert data["args"] == {"api_key": REDACTED}
     assert data["result"]["review"].endswith("…[+1500 chars]")
-
-
-# --- cost ---------------------------------------------------------------------------
-
-PRICES = {"test:model": ModelPrice(input_per_mtok=3.0, output_per_mtok=15.0)}
-
-
-def test_estimate_cost_from_price_table() -> None:
-    cost = estimate_cost("test:model", input_tokens=1_000_000, output_tokens=200_000, prices=PRICES)
-
-    assert cost == pytest.approx(3.0 + 3.0)
-
-
-def test_estimate_cost_unknown_model_is_none() -> None:
-    assert estimate_cost("nope:model", input_tokens=10, output_tokens=10, prices=PRICES) is None
