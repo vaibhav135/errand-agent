@@ -57,6 +57,26 @@ def test_transaction_rolls_back_and_reraises_on_error(db_path: Path) -> None:
     assert not conn.in_transaction
 
 
+@pytest.mark.xfail(strict=True, reason="BUG-1: ROLLBACK after SQLite auto-rollback masks error")
+def test_original_error_survives_when_sqlite_already_rolled_back(db_path: Path) -> None:
+    # Some failures make SQLite end the transaction itself (RAISE(ROLLBACK) in a
+    # trigger, disk full, some I/O errors). Our own ROLLBACK must not then fail
+    # with "no transaction is active" and replace the real cause.
+    conn = connect(db_path)
+    conn.executescript(
+        """
+        CREATE TABLE t (x INTEGER);
+        CREATE TRIGGER guard BEFORE INSERT ON t WHEN NEW.x < 0
+        BEGIN SELECT RAISE(ROLLBACK, 'negative not allowed'); END;
+        """
+    )
+
+    with pytest.raises(sqlite3.IntegrityError, match="negative not allowed"), transaction(conn):
+        conn.execute("INSERT INTO t VALUES (-1)")
+
+    assert not conn.in_transaction
+
+
 def test_transaction_takes_write_lock_at_begin(db_path: Path) -> None:
     # BEGIN IMMEDIATE: the lock is taken when the transaction starts, before any
     # write. A second writer is refused at BEGIN instead of both proceeding and
