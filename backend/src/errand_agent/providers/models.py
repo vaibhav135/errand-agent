@@ -69,15 +69,22 @@ class Attributes(_Model):
     languages: list[str]
 
 
-class ProviderSummary(_Model):
+class ProviderProfile(_Model):
+    """Fields every view of a provider shares."""
+
     provider_id: str
     name: str
     service: Service
-    area: str
     rating: float
     review_count: int
     price_inr: int
     attributes: Attributes
+
+
+class ProviderSummary(ProviderProfile):
+    """A search hit: tied to the searched area and date range."""
+
+    area: str
     available_slots: list[AwareDatetime]
 
 
@@ -88,7 +95,10 @@ class Review(_Model):
     text: UntrustedText
 
 
-class ProviderDetails(ProviderSummary):
+class ProviderDetails(ProviderProfile):
+    """get_provider: the provider itself, independent of any search."""
+
+    areas: list[str]
     description: UntrustedText
     reviews: list[Review]
 
@@ -121,7 +131,7 @@ class SearchOk(_Model):
 
 
 class SearchFailed(_Model):
-    status: Literal["unknown_service", "unknown_area"]
+    status: Literal["unknown_service", "unknown_area", "date_range_too_long"]
 
 
 SearchResult = Annotated[SearchOk | SearchFailed, Field(discriminator="status")]

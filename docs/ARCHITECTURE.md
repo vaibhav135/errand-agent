@@ -141,7 +141,9 @@ reading the environment would silently miss keys that live in `.env`.
 | Transport failure | cancel's 503, book's timeout | `ProviderUnavailable` (retry same key) / `ProviderTimeout` (outcome unknown: check `get_booking_status`) |
 
   Results are discriminated unions, so impossible states (`booked` without a booking)
-  can't be built. Prices are whole rupees (`int`) because approvals compare them
+  can't be built. Provider views share a `ProviderProfile` base: `ProviderSummary` adds
+  the searched `area` and `available_slots` (meaningful only for a search);
+  `ProviderDetails` adds all served `areas`, the description and reviews. Prices are whole rupees (`int`) because approvals compare them
   exactly. Models are frozen and reject unknown fields. Provider-written free text
   (reviews, descriptions) is typed `UntrustedText` so the agent layer can route it to
   the quarantined review reader. `price_changed` is not a provider status: comparing
@@ -171,6 +173,15 @@ reading the environment would silently miss keys that live in `.env`.
     depend on call order. Python's `hash()` is avoided: it is salted per process.
   - **DB-level guard:** a partial unique index allows one confirmed booking per
     (provider, slot), so double booking is impossible whatever the code does.
+  - **Tools** ([world.py](../backend/src/errand_agent/mocks/world.py), `MockWorld`,
+    bound to one calling user like an API token):
+    - `search_providers`: providers serving the (service, area) in **stable id order,
+      never ranked** (ranking is the workflow's job; the mock must not bias it). Area
+      matching ignores case. Slots = schedule − past − active holds − confirmed
+      bookings. Ranges over 14 days return `date_range_too_long` rather than being
+      trimmed silently.
+    - `get_provider`: details, all areas and reviews **verbatim**, injections included;
+      attack labels never leave the mock (a test scans every provider's payload).
   - **Scenarios** ([scenario.py](../backend/src/errand_agent/mocks/scenario.py)): by
     default `book` outcomes are keyed-random at the contract's 70 / 15 / 7.5 / 7.5
     (success / slot_taken / timeout-booked / timeout-not-booked); a retry is a new

@@ -22,14 +22,14 @@ How:  - The JSON is validated with pydantic on load, so a typo in a service, are
 
 import json
 import sqlite3
-from datetime import UTC, datetime, time, timedelta
+from datetime import datetime, time, timedelta
 from importlib.resources import files
 from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from errand_agent.core.clock import Clock
-from errand_agent.mocks.schedule import IST
+from errand_agent.mocks.schedule import IST, utc_text
 from errand_agent.providers.models import BookingStatus, Service
 from errand_agent.store.db import transaction
 
@@ -113,7 +113,7 @@ def seed_world(conn: sqlite3.Connection, clock: Clock, *, user_id: str) -> bool:
     data = load_seed()
     now = clock.now()
     today = now.astimezone(IST).date()
-    stamp = now.astimezone(UTC).isoformat()
+    stamp = utc_text(now)
     by_id = {p.provider_id: p for p in data.providers}
 
     with transaction(conn):
@@ -169,7 +169,7 @@ def seed_world(conn: sqlite3.Connection, clock: Clock, *, user_id: str) -> bool:
                     user_id,
                     h.provider_id,
                     by_id[h.provider_id].service,
-                    slot_ist.astimezone(UTC).isoformat(),
+                    utc_text(slot_ist),
                     h.price_inr,
                     h.status,
                     stamp,
