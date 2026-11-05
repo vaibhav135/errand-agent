@@ -1,8 +1,7 @@
 """MockWorld: the ToolEnv implementation backed by mock_world.db.
 
 What: `MockWorld.open(path, clock=, ids=, scenario=, user_id=)` migrates and seeds
-      the database, then serves the eight provider tools. (This module grows tool
-      by tool; see TASKS.md.)
+      the database, then serves all eight provider tools (it satisfies `ToolEnv`).
 
 Why:  The agent, workflow and evals need a provider ecosystem that behaves like
       the real thing, failures included, runs offline, and remembers state across
@@ -34,6 +33,16 @@ How:  - Bound to one calling user (like an API token): `hold_slot`/`book` take n
         Every call records key -> hold in `book_requests` on first use.
       - get_booking_status: booked / not_booked ("seen, nothing booked", e.g.
         after a timeout that didn't book) / unknown_reference ("never seen").
+      - cancel / reschedule: a key replays its stored result; the same key with
+        different parameters is idempotency_key_reused. cancel's first
+        `cancel_transient_failures` attempts per booking raise ProviderUnavailable
+        (503) and do nothing else; the attempt count is committed *before*
+        raising, or the 503 would never clear. Cancelling an already-cancelled
+        booking returns its current state. reschedule refuses non-confirmed or
+        past bookings, and treats configured conflicts, unoffered, past or taken
+        target slots alike as slot_conflict; the price stays the same.
+      - list_bookings: the user's bookings ordered by slot (ghost bookings from
+        slot_taken races belong to someone else and never appear).
       - All datetimes go through `utc_text` before touching the DB; datetimes
         returned to callers are IST.
 """
@@ -43,12 +52,19 @@ import sqlite3
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from pydantic import BaseModel, TypeAdapter
+
 from errand_agent.core.clock import Clock
 from errand_agent.core.ids import IdGen
-from errand_agent.mocks.scenario import Scenario, decide_book_outcome, quoted_price
+from errand_agent.mocks.scenario import (
+    Scenario,
+    decide_book_outcome,
+    is_slot_conflict,
+    quoted_price,
+)
 from errand_agent.mocks.schedule import IST, slot_schedule, utc_text
 from errand_agent.mocks.seed import AREAS, SERVICES, seed_world
-from errand_agent.providers.errors import ProviderTimeout
+from errand_agent.providers.errors import ProviderTimeout, ProviderUnavailable
 from errand_agent.providers.models import (
     Attributes,
     Booked,
@@ -56,6 +72,9 @@ from errand_agent.providers.models import (
     Booking,
     BookingStatusResult,
     BookResult,
+    CancelFailed,
+    Cancelled,
+    CancelResult,
     DateRange,
     Held,
     Hold,
@@ -67,6 +86,9 @@ from errand_agent.providers.models import (
     ProviderProfile,
     ProviderResult,
     ProviderSummary,
+    Rescheduled,
+    RescheduleFailed,
+    RescheduleResult,
     Review,
     SearchFailed,
     SearchOk,
@@ -85,6 +107,14 @@ __all__ = ["HOLD_MINUTES", "MAX_SEARCH_DAYS", "MockWorld", "utc_text"]
 MAX_SEARCH_DAYS = 14
 HOLD_MINUTES = 10
 _GHOST_USER = "someone_else"  # owner of bookings that win a slot_taken race
+_CANCEL_RESULT: TypeAdapter[CancelResult] = TypeAdapter(CancelResult)
+_RESCHEDULE_RESULT: TypeAdapter[RescheduleResult] = TypeAdapter(RescheduleResult)
+
+
+class _KeyReused(Exception):
+    """An idempotency key was replayed with different request parameters."""
+
+
 _AREA_BY_KEY = {area.casefold(): area for area in AREAS}
 
 
@@ -393,6 +423,156 @@ class MockWorld:
         if seen is not None:
             return StatusNotBooked()
         return StatusUnknown()
+
+    # --- cancel -------------------------------------------------------------------------
+
+    async def cancel(self, booking_id: str, idempotency_key: str) -> CancelResult:
+        now = self._clock.now()
+        # The 503 is raised *after* the transaction: raising inside it would roll back
+        # the attempt count, so every cancel would stay "the first attempt" forever.
+        unavailable = False
+        result: CancelResult | None = None
+        with transaction(self._conn):
+            params = {"booking_id": booking_id}
+            try:
+                replay = self._replay(idempotency_key, "cancel", params, _CANCEL_RESULT)
+            except _KeyReused:
+                return CancelFailed(status="idempotency_key_reused")
+            if replay is not None:
+                return replay
+            row = self._own_booking(booking_id)
+            if row is None:
+                return CancelFailed(status="booking_not_found")
+
+            attempts = self._conn.execute(
+                "SELECT attempts FROM cancel_attempts WHERE booking_id = ?", (booking_id,)
+            ).fetchone()
+            seen = attempts["attempts"] if attempts else 0
+            if seen < self._scenario.cancel_transient_failures:
+                self._conn.execute(
+                    "INSERT INTO cancel_attempts (booking_id, attempts) VALUES (?, ?)"
+                    " ON CONFLICT (booking_id) DO UPDATE SET attempts = excluded.attempts",
+                    (booking_id, seen + 1),
+                )
+                unavailable = True  # counted (committed) but nothing else done
+            else:
+                if row["status"] in ("cancelled", "cancelled_by_provider"):
+                    result = Cancelled(booking=self._booking(booking_id))
+                elif row["status"] == "completed" or row["slot"] <= utc_text(now):
+                    result = CancelFailed(status="not_cancellable")
+                else:
+                    self._conn.execute(
+                        "UPDATE bookings SET status = 'cancelled', updated_at = ?"
+                        " WHERE booking_id = ?",
+                        (utc_text(now), booking_id),
+                    )
+                    result = Cancelled(booking=self._booking(booking_id))
+                self._remember(idempotency_key, "cancel", booking_id, params, result, now)
+
+        if unavailable:
+            raise ProviderUnavailable(f"cancel({booking_id}): 503, retry with the same key")
+        assert result is not None
+        return result
+
+    # --- reschedule ---------------------------------------------------------------------
+
+    async def reschedule(
+        self, booking_id: str, slot: datetime, idempotency_key: str
+    ) -> RescheduleResult:
+        now = self._clock.now()
+        result: RescheduleResult
+        with transaction(self._conn):
+            params = {"booking_id": booking_id, "slot": utc_text(slot)}
+            try:
+                replay = self._replay(idempotency_key, "reschedule", params, _RESCHEDULE_RESULT)
+            except _KeyReused:
+                return RescheduleFailed(status="idempotency_key_reused")
+            if replay is not None:
+                return replay
+            row = self._own_booking(booking_id)
+            if row is None:
+                return RescheduleFailed(status="booking_not_found")
+
+            if row["status"] != "confirmed" or row["slot"] <= utc_text(now):
+                result = RescheduleFailed(status="not_reschedulable")
+            elif utc_text(slot) == row["slot"]:
+                result = Rescheduled(booking=self._booking(booking_id))  # already there
+            elif self._cannot_move_to(row["provider_id"], slot, now):
+                result = RescheduleFailed(status="slot_conflict")
+            else:
+                self._conn.execute(
+                    "UPDATE bookings SET slot = ?, updated_at = ? WHERE booking_id = ?",
+                    (utc_text(slot), utc_text(now), booking_id),
+                )
+                result = Rescheduled(booking=self._booking(booking_id))
+            self._remember(idempotency_key, "reschedule", booking_id, params, result, now)
+        return result
+
+    def _cannot_move_to(self, provider_id: str, slot: datetime, now: datetime) -> bool:
+        offered = slot_schedule(provider_id, slot.astimezone(IST).date(), seed=self._scenario.seed)
+        return (
+            is_slot_conflict(self._scenario, provider_id, slot)
+            or slot <= now
+            or slot not in offered
+            or self._taken_by_others(provider_id, slot)
+        )
+
+    # --- list_bookings ------------------------------------------------------------------
+
+    async def list_bookings(self, user_id: str) -> list[Booking]:
+        rows = self._conn.execute(
+            "SELECT booking_id FROM bookings WHERE user_id = ? ORDER BY slot, booking_id",
+            (user_id,),
+        ).fetchall()
+        return [self._booking(r["booking_id"]) for r in rows]
+
+    # --- request replay (cancel / reschedule) --------------------------------------------
+
+    def _own_booking(self, booking_id: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT * FROM bookings WHERE booking_id = ? AND user_id = ?",
+            (booking_id, self._user_id),
+        ).fetchone()
+
+    def _replay[R](
+        self,
+        key: str,
+        operation: str,
+        params: dict[str, str],
+        adapter: TypeAdapter[R],
+    ) -> R | None:
+        """Stored result for this exact request; raises _KeyReused if the key meant
+        a different request (other operation, booking or slot)."""
+        row = self._conn.execute(
+            "SELECT operation, request, result FROM requests WHERE idempotency_key = ?", (key,)
+        ).fetchone()
+        if row is None:
+            return None
+        if row["operation"] != operation or json.loads(row["request"]) != params:
+            raise _KeyReused
+        return adapter.validate_json(row["result"])
+
+    def _remember(
+        self,
+        key: str,
+        operation: str,
+        booking_id: str,
+        params: dict[str, str],
+        result: BaseModel,
+        now: datetime,
+    ) -> None:
+        self._conn.execute(
+            "INSERT INTO requests (idempotency_key, operation, booking_id, request, result,"
+            " created_at) VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                key,
+                operation,
+                booking_id,
+                json.dumps(params),
+                result.model_dump_json(),
+                utc_text(now),
+            ),
+        )
 
     # --- get_provider -----------------------------------------------------------------
 

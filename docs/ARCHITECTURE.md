@@ -199,6 +199,17 @@ reading the environment would silently miss keys that live in `.env`.
       booked) / `unknown_reference` (never seen). Every `book` call records
       key → hold in `book_requests`, which is what makes `not_booked` possible after
       a timeout. This is the source of truth the workflow consults after a timeout.
+    - `cancel`: the first attempt per booking raises `ProviderUnavailable` (503) and
+      does nothing else; the retry with the same key succeeds. (The attempt count is
+      committed before raising, otherwise the 503 would never clear.) Cancelling an
+      already-cancelled booking returns its current state, not an error; completed or
+      past bookings are `not_cancellable`.
+    - `reschedule`: moves a confirmed future booking, keeping the price. Configured
+      conflicts and unoffered, past or taken targets are all `slot_conflict`.
+    - Both replay a key's stored result; the same key with different parameters
+      (another booking, another slot) is `idempotency_key_reused`.
+    - `list_bookings`: the user's bookings, past and upcoming, ordered by slot.
+    - `MockWorld` satisfies `ToolEnv`; pyright checks this structurally.
   - **Scenarios** ([scenario.py](../backend/src/errand_agent/mocks/scenario.py)): by
     default `book` outcomes are keyed-random at the contract's 70 / 15 / 7.5 / 7.5
     (success / slot_taken / timeout-booked / timeout-not-booked); a retry is a new

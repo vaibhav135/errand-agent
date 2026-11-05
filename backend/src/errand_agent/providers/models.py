@@ -197,7 +197,7 @@ class Cancelled(_Model):
 
 
 class CancelFailed(_Model):
-    status: Literal["booking_not_found", "not_cancellable"]
+    status: Literal["booking_not_found", "not_cancellable", "idempotency_key_reused"]
 
 
 CancelResult = Annotated[Cancelled | CancelFailed, Field(discriminator="status")]
@@ -209,7 +209,9 @@ class Rescheduled(_Model):
 
 
 class RescheduleFailed(_Model):
-    status: Literal["slot_conflict", "booking_not_found", "not_reschedulable"]
+    status: Literal[
+        "slot_conflict", "booking_not_found", "not_reschedulable", "idempotency_key_reused"
+    ]
 
 
 RescheduleResult = Annotated[Rescheduled | RescheduleFailed, Field(discriminator="status")]
