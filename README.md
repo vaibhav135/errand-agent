@@ -19,5 +19,10 @@ make lint      # ruff, pyright, oxlint, tsc
 make           # list all targets
 ```
 
+To run the live agent, copy `backend/.env.example` to `backend/.env` (gitignored) and set
+`ERRAND_MODEL` plus the API key for that provider, e.g.
+`ERRAND_MODEL=anthropic:claude-opus-5-5` and `ANTHROPIC_API_KEY=...`. Tests and evals
+never need a key: they run offline against a scripted model.
+
 How it fits together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Progress is tracked
 in [TASKS.md](TASKS.md).

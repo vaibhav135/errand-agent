@@ -73,6 +73,13 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 | `ERRAND_AGENT_DB_PATH` / `ERRAND_MOCK_DB_PATH` / `ERRAND_TRACE_DIR` | under `data_dir` |
 | `ERRAND_MODEL` | unset (e.g. `anthropic:claude-sonnet-5-5`) |
 | `ERRAND_MOCK_SEED` | `42` |
+| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | unset; standard names, no prefix |
+
+Local values go in `backend/.env` (gitignored), copied from the committed
+`backend/.env.example`. Blank entries (`KEY=`) count as unset. Provider keys are
+`SecretStr` fields passed explicitly to the model provider: pydantic-settings reads
+`.env` into `Settings` only and never exports it to `os.environ`, so relying on the SDKs
+reading the environment would silently miss keys that live in `.env`.
 
 ### IDs: `core/ids.py`
 - **What:** `IdGen` protocol; `RandomIdGen` (`run_<uuid4 hex>`) and `SequentialIdGen`
