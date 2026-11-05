@@ -19,4 +19,5 @@ make lint      # ruff, pyright, oxlint, tsc
 make           # list all targets
 ```
 
-Progress is tracked in [TASKS.md](TASKS.md).
+How it fits together: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Progress is tracked
+in [TASKS.md](TASKS.md).

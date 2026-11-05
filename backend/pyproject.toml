@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.162.0",
     "pydantic-ai-slim[anthropic,openai]>=2.66.0",
+    "pydantic-settings>=2.16.2",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -30,6 +31,9 @@ dev = [
 testpaths = ["tests"]
 # "auto" so async tests don't each need @pytest.mark.asyncio
 asyncio_mode = "auto"
+# One event loop per test: no state leaks between async tests (silences the
+# pytest-asyncio "loop scope unset" deprecation warning).
+asyncio_default_fixture_loop_scope = "function"
 addopts = "-ra --strict-markers"
 # Bug-repro commits use xfail(strict=True); make strict the default so an
 # unexpectedly passing repro fails the run instead of silently passing.
