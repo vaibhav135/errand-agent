@@ -17,7 +17,9 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Import-direction test (`workflow/` must not import `agent/` or `api/`)
 
 ## Phase 2 — Mock world
-- [x] `mock_world.db`, seeded providers (incl. a prompt-injection review), scenario config + seeded RNG
+- [x] `providers/` contract layer (`ToolEnv`, models, errors)
+- [x] `mock_world.db` schema, seeded providers, 14 prompt-injection fixtures, keyed RNG
+- [x] Scenario config (scripted outcomes, weights, price drift, slot conflicts)
 - [ ] `search_providers`, `get_provider`
 - [ ] `hold_slot` (10-min expiry, configurable price drift)
 - [ ] `book` (70/15/15 outcomes, timeout-after-success, `hold_expired`) + `get_booking_status`

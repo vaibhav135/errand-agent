@@ -171,6 +171,16 @@ reading the environment would silently miss keys that live in `.env`.
     depend on call order. Python's `hash()` is avoided: it is salted per process.
   - **DB-level guard:** a partial unique index allows one confirmed booking per
     (provider, slot), so double booking is impossible whatever the code does.
+  - **Scenarios** ([scenario.py](../backend/src/errand_agent/mocks/scenario.py)): by
+    default `book` outcomes are keyed-random at the contract's 70 / 15 / 7.5 / 7.5
+    (success / slot_taken / timeout-booked / timeout-not-booked); a retry is a new
+    attempt with a fresh draw. A scenario can script exact outcomes (consumed in
+    order, then random), set per-provider price drift at hold time, mark slot
+    conflicts for reschedule, and set the timeout length and transient cancel
+    failures. The scenario is passed in by whoever builds the mock; only the script
+    position is persisted (`scenario_state`), inside the same transaction as the
+    booking, so a restart continues the script and a rolled-back booking doesn't
+    consume an outcome.
 
 ### Attack fixtures (prompt injection)
 
