@@ -22,7 +22,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Scenario config (scripted outcomes, weights, price drift, slot conflicts)
 - [x] `search_providers`, `get_provider`
 - [x] `hold_slot` (10-min expiry, configurable price drift)
-- [ ] `book` (70/15/15 outcomes, timeout-after-success, `hold_expired`) + `get_booking_status`
+- [x] `book` (70/15/15 outcomes, timeout-after-success, `hold_expired`) + `get_booking_status`
 - [ ] `cancel` (first call 503), `reschedule` (`slot_conflict`), `list_bookings`
 
 ## Phase 3 — Workflow core

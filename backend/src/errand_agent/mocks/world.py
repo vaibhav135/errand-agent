@@ -24,6 +24,16 @@ How:  - Bound to one calling user (like an API token): `hold_slot`/`book` take n
         re-quoted price; the old one ends now), so the workflow can refresh a
         hold inside its expiry safety margin. Check and insert share one
         BEGIN IMMEDIATE transaction, so two racing holds can't both win.
+      - book: checks in order (1) key used for another hold -> idempotency_key_reused,
+        (2) key already booked -> replay the original booking, (3) unknown or
+        foreign hold -> hold_not_found, (4) hold consumed under another key or
+        past expiry -> hold_expired, (5) slot confirmed for someone else ->
+        slot_taken; then draws an outcome (scripted, else keyed-random). Timeouts
+        *commit first*, then wait `timeout_seconds` on the clock and raise
+        ProviderTimeout: the provider did its work and the reply was lost.
+        Every call records key -> hold in `book_requests` on first use.
+      - get_booking_status: booked / not_booked ("seen, nothing booked", e.g.
+        after a timeout that didn't book) / unknown_reference ("never seen").
       - All datetimes go through `utc_text` before touching the DB; datetimes
         returned to callers are IST.
 """
@@ -35,11 +45,17 @@ from pathlib import Path
 
 from errand_agent.core.clock import Clock
 from errand_agent.core.ids import IdGen
-from errand_agent.mocks.scenario import Scenario, quoted_price
+from errand_agent.mocks.scenario import Scenario, decide_book_outcome, quoted_price
 from errand_agent.mocks.schedule import IST, slot_schedule, utc_text
 from errand_agent.mocks.seed import AREAS, SERVICES, seed_world
+from errand_agent.providers.errors import ProviderTimeout
 from errand_agent.providers.models import (
     Attributes,
+    Booked,
+    BookFailed,
+    Booking,
+    BookingStatusResult,
+    BookResult,
     DateRange,
     Held,
     Hold,
@@ -56,6 +72,10 @@ from errand_agent.providers.models import (
     SearchOk,
     SearchResult,
     Service,
+    StatusBooked,
+    StatusNotBooked,
+    StatusUnknown,
+    booking_reference,
 )
 from errand_agent.store.db import connect, transaction
 from errand_agent.store.migrate import migrate, migrations_for
@@ -64,6 +84,7 @@ __all__ = ["HOLD_MINUTES", "MAX_SEARCH_DAYS", "MockWorld", "utc_text"]
 
 MAX_SEARCH_DAYS = 14
 HOLD_MINUTES = 10
+_GHOST_USER = "someone_else"  # owner of bookings that win a slot_taken race
 _AREA_BY_KEY = {area.casefold(): area for area in AREAS}
 
 
@@ -214,6 +235,164 @@ class MockWorld:
             ).fetchone()
             is not None
         )
+
+    # --- book ---------------------------------------------------------------------------
+
+    async def book(self, hold_id: str, idempotency_key: str) -> BookResult:
+        now = self._clock.now()
+        result: BookResult | None = None
+        timed_out = False
+        with transaction(self._conn):
+            seen = self._conn.execute(
+                "SELECT hold_id FROM book_requests WHERE idempotency_key = ?", (idempotency_key,)
+            ).fetchone()
+            if seen is not None and seen["hold_id"] != hold_id:
+                return BookFailed(status="idempotency_key_reused")
+            done = self._conn.execute(
+                "SELECT booking_id FROM bookings WHERE idempotency_key = ?", (idempotency_key,)
+            ).fetchone()
+            if done is not None:  # replay: the original answer, whatever happened since
+                return Booked(booking=self._booking(done["booking_id"]))
+
+            hold = self._conn.execute(
+                "SELECT * FROM holds WHERE hold_id = ? AND user_id = ?", (hold_id, self._user_id)
+            ).fetchone()
+            if hold is None:
+                return BookFailed(status="hold_not_found")
+            if seen is None:
+                self._conn.execute(
+                    "INSERT INTO book_requests (idempotency_key, hold_id, user_id, created_at)"
+                    " VALUES (?, ?, ?, ?)",
+                    (idempotency_key, hold_id, self._user_id, utc_text(now)),
+                )
+            if self._conn.execute(
+                "SELECT 1 FROM bookings WHERE hold_id = ?", (hold_id,)
+            ).fetchone():
+                return BookFailed(status="hold_expired")  # consumed under another key
+            if hold["expires_at"] <= utc_text(now):
+                return BookFailed(status="hold_expired")
+            slot = datetime.fromisoformat(hold["slot"])
+            if self._slot_confirmed(hold["provider_id"], slot):
+                return BookFailed(status="slot_taken")
+
+            attempt = hold["book_attempts"]
+            self._conn.execute(
+                "UPDATE holds SET book_attempts = ? WHERE hold_id = ?", (attempt + 1, hold_id)
+            )
+            outcome = decide_book_outcome(self._conn, self._scenario, hold_id, attempt)
+            if outcome in ("success", "timeout_booked"):
+                booking_id = self._insert_booking(hold, now, idempotency_key)
+                result = Booked(booking=self._booking(booking_id))
+            elif outcome == "slot_taken":
+                self._insert_ghost_booking(hold, now)  # someone else got there first
+                result = BookFailed(status="slot_taken")
+            timed_out = outcome in ("timeout_booked", "timeout_not_booked")
+
+        # Committed above: the provider did its work; now the reply gets lost.
+        if timed_out:
+            await self._clock.sleep(self._scenario.timeout_seconds)
+            raise ProviderTimeout(f"book({hold_id}) timed out; check get_booking_status")
+        assert result is not None
+        return result
+
+    def _slot_confirmed(self, provider_id: str, slot: datetime) -> bool:
+        return (
+            self._conn.execute(
+                "SELECT 1 FROM bookings"
+                " WHERE provider_id = ? AND slot = ? AND status = 'confirmed'",
+                (provider_id, utc_text(slot)),
+            ).fetchone()
+            is not None
+        )
+
+    def _insert_booking(self, hold: sqlite3.Row, now: datetime, idempotency_key: str) -> str:
+        booking_id = self._ids.new("bk")
+        service = self._conn.execute(
+            "SELECT service FROM providers WHERE provider_id = ?", (hold["provider_id"],)
+        ).fetchone()["service"]
+        self._conn.execute(
+            "INSERT INTO bookings (booking_id, user_id, provider_id, service, slot, price_inr,"
+            " status, hold_id, idempotency_key, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, 'confirmed', ?, ?, ?, ?)",
+            (
+                booking_id,
+                self._user_id,
+                hold["provider_id"],
+                service,
+                hold["slot"],
+                hold["quoted_price_inr"],
+                hold["hold_id"],
+                idempotency_key,
+                utc_text(now),
+                utc_text(now),
+            ),
+        )
+        return booking_id
+
+    def _insert_ghost_booking(self, hold: sqlite3.Row, now: datetime) -> None:
+        service = self._conn.execute(
+            "SELECT service FROM providers WHERE provider_id = ?", (hold["provider_id"],)
+        ).fetchone()["service"]
+        self._conn.execute(
+            "INSERT INTO bookings (booking_id, user_id, provider_id, service, slot, price_inr,"
+            " status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'confirmed', ?, ?)",
+            (
+                self._ids.new("bk"),
+                _GHOST_USER,
+                hold["provider_id"],
+                service,
+                hold["slot"],
+                hold["quoted_price_inr"],
+                utc_text(now),
+                utc_text(now),
+            ),
+        )
+
+    def _booking(self, booking_id: str) -> Booking:
+        row = self._conn.execute(
+            "SELECT b.*, p.name AS provider_name FROM bookings b"
+            " JOIN providers p USING (provider_id) WHERE b.booking_id = ?",
+            (booking_id,),
+        ).fetchone()
+        return Booking(
+            booking_id=row["booking_id"],
+            user_id=row["user_id"],
+            provider_id=row["provider_id"],
+            provider_name=row["provider_name"],
+            service=row["service"],
+            slot=datetime.fromisoformat(row["slot"]).astimezone(IST),
+            price_inr=row["price_inr"],
+            status=row["status"],
+        )
+
+    # --- get_booking_status -------------------------------------------------------------
+
+    async def get_booking_status(
+        self, *, hold_id: str | None = None, idempotency_key: str | None = None
+    ) -> BookingStatusResult:
+        kind, ref = booking_reference(hold_id=hold_id, idempotency_key=idempotency_key)
+        if kind == "idempotency_key":
+            seen = self._conn.execute(
+                "SELECT 1 FROM book_requests WHERE idempotency_key = ? AND user_id = ?",
+                (ref, self._user_id),
+            ).fetchone()
+            booked = self._conn.execute(
+                "SELECT booking_id FROM bookings WHERE idempotency_key = ? AND user_id = ?",
+                (ref, self._user_id),
+            ).fetchone()
+        else:
+            seen = self._conn.execute(
+                "SELECT 1 FROM holds WHERE hold_id = ? AND user_id = ?", (ref, self._user_id)
+            ).fetchone()
+            booked = self._conn.execute(
+                "SELECT booking_id FROM bookings WHERE hold_id = ? AND user_id = ?",
+                (ref, self._user_id),
+            ).fetchone()
+        if booked is not None:
+            return StatusBooked(booking=self._booking(booked["booking_id"]))
+        if seen is not None:
+            return StatusNotBooked()
+        return StatusUnknown()
 
     # --- get_provider -----------------------------------------------------------------
 

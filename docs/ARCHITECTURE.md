@@ -188,6 +188,17 @@ reading the environment would silently miss keys that live in `.env`.
       (new id, fresh 10 minutes, re-quoted price; the old hold ends immediately), so
       the workflow can refresh a hold inside its expiry safety margin. Check and
       insert share one `BEGIN IMMEDIATE` transaction.
+    - `book`: idempotent like a real provider. The same key returns the original
+      booking (even after the hold expires); a key reused for a different hold is
+      `idempotency_key_reused`; a consumed hold with a fresh key is `hold_expired`
+      (and `UNIQUE(hold_id)` forbids a second booking anyway). Outcomes follow the
+      scenario. **Timeouts commit first, then wait and raise `ProviderTimeout`**:
+      `timeout_booked` leaves a real booking behind, `timeout_not_booked` leaves the
+      hold active for a fresh attempt with the same key.
+    - `get_booking_status` (by hold or key): `booked` / `not_booked` (seen, nothing
+      booked) / `unknown_reference` (never seen). Every `book` call records
+      key → hold in `book_requests`, which is what makes `not_booked` possible after
+      a timeout. This is the source of truth the workflow consults after a timeout.
   - **Scenarios** ([scenario.py](../backend/src/errand_agent/mocks/scenario.py)): by
     default `book` outcomes are keyed-random at the contract's 70 / 15 / 7.5 / 7.5
     (success / slot_taken / timeout-booked / timeout-not-booked); a retry is a new
