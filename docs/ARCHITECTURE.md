@@ -22,16 +22,20 @@ the enforcement mechanism. Each layer may import only the layers listed:
 |---|---|---|
 | `core/` | nothing internal | built |
 | `store/`, `tracing/` | `core` | built |
-| `mocks/` | `core`, `store` (the "external world" knows nothing of the agent) | Phase 2 |
+| `providers/` | `core` (the contract: `ToolEnv`, models, errors) | built |
+| `mocks/` | `core`, `store`, `providers` (the "external world" knows nothing of the agent) | Phase 2 |
 | `memory/` | `core`, `store`, `tracing` | Phase 4 |
-| `workflow/` | `core`, `store`, `tracing`, `memory`, `mocks` (interface only, narrowed in Phase 3) | Phase 3 |
-| `proactive/` | `core`, `store`, `tracing`, `memory`, `mocks`, `workflow` | Phase 6 |
-| `agent/` | `core`, `store`, `tracing`, `memory`, `mocks`, `workflow` | Phase 5 |
+| `workflow/` | `core`, `store`, `tracing`, `memory`, `providers` | Phase 3 |
+| `proactive/` | `core`, `store`, `tracing`, `memory`, `providers`, `workflow` | Phase 6 |
+| `agent/` | `core`, `store`, `tracing`, `memory`, `providers`, `workflow` | Phase 5 |
 | `api/` | everything | Phase 7 |
 
 If every layer obeys its own list, indirect violations (e.g. `workflow → memory →
 agent`) are impossible too. `proactive` and `agent` don't import each other: the monitor
 only detects events and starts runs, which the orchestrator handles like any other.
+Only `api/` (app wiring) may import `mocks/`: every other layer sees providers solely
+through the `ToolEnv` contract, so none can peek at mock internals (e.g. read the mock
+database to decide whether a booking happened).
 
 **Enforced by** `backend/tests/unit/test_layering.py`. It parses every module with `ast`
 (so aliased, relative and function-local imports count, while docstrings, comments and
@@ -121,6 +125,27 @@ reading the environment would silently miss keys that live in `.env`.
   2026-12-01), and `estimate_cost(..., on=clock.now().date())` picks the one in force,
   so announced changes need no code edit on the day. Only Anthropic and OpenAI SDKs
   are installed; Gemini is priced but not runnable yet.
+
+### Provider contract: `providers/`
+- **What:** `ToolEnv` ([tool_env.py](../backend/src/errand_agent/providers/tool_env.py)),
+  the eight fixed tools as one async protocol; their models
+  ([models.py](../backend/src/errand_agent/providers/models.py)); transport errors
+  ([errors.py](../backend/src/errand_agent/providers/errors.py)).
+- **Why:** Workflow, agent and monitor code against the contract, never the mock, so a
+  real provider adapter could replace the mock unchanged.
+- **How:** Two kinds of failure, as in a real HTTP API:
+
+| Kind | Examples | Shape |
+|---|---|---|
+| Business outcome | `slot_taken`, `hold_expired`, `slot_conflict` | Typed result, discriminated on `status` |
+| Transport failure | cancel's 503, book's timeout | `ProviderUnavailable` (retry same key) / `ProviderTimeout` (outcome unknown: check `get_booking_status`) |
+
+  Results are discriminated unions, so impossible states (`booked` without a booking)
+  can't be built. Prices are whole rupees (`int`) because approvals compare them
+  exactly. Models are frozen and reject unknown fields. Provider-written free text
+  (reviews, descriptions) is typed `UntrustedText` so the agent layer can route it to
+  the quarantined review reader. `price_changed` is not a provider status: comparing
+  the quoted price with what the user approved is the workflow's job.
 
 ## Run lifecycle
 
