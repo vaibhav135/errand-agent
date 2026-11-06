@@ -77,6 +77,9 @@ class Settings(BaseSettings):
     # Load the generated demo user (profile, 55 memories, 200 messages) into an empty DB.
     seed_demo_user: bool = True
 
+    # Expose /api/demo/* (trigger failures on the mock world live) and the UI's Demo tab.
+    demo_mode: bool = False
+
     # Background reconciler cadence; 0 disables the loop (the startup pass still runs).
     reconcile_interval_seconds: float = Field(default=30.0, ge=0)
 

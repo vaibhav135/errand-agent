@@ -1,0 +1,221 @@
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+import type { Reply } from '@/api/types'
+import { fakeApi } from '@/test/fakeApi'
+import { findToast, renderWithToasts } from '@/test/toasts'
+
+import { Chat } from './Chat'
+
+const SESSION = 'sess_1'
+
+/** An SSE response the test feeds frame by frame. */
+function liveStream() {
+  const encoder = new TextEncoder()
+  let controller!: ReadableStreamDefaultController<Uint8Array>
+  const body = new ReadableStream<Uint8Array>({
+    start(c) {
+      controller = c
+    },
+  })
+  return {
+    response: new Response(body, { headers: { 'content-type': 'text/event-stream' } }),
+    send(event: string, data: unknown) {
+      controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`))
+    },
+    close() {
+      controller.close()
+    },
+  }
+}
+
+function reply(overrides: Partial<Reply>): Reply {
+  return {
+    run_id: 'run_1',
+    kind: 'answered',
+    message: '',
+    approval: null,
+    booking: null,
+    suggestions: [],
+    ...overrides,
+  }
+}
+
+const CARD = {
+  approval_id: 'appr_1',
+  action: 'book' as const,
+  fingerprint: 'fp_shown',
+  status: 'pending',
+  details: {
+    provider_name: 'FlowRight Plumbers',
+    slot: '2026-11-07T11:00:00+05:30',
+    price_inr: 1200,
+    booking_id: null,
+  },
+}
+
+afterEach(() => vi.unstubAllGlobals())
+
+async function type(text: string) {
+  await userEvent.type(screen.getByRole('textbox', { name: 'Message' }), `${text}{Enter}`)
+}
+
+describe('Chat', () => {
+  it('loads the conversation so far', async () => {
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [
+        { role: 'user', content: 'hi', run_id: null, created_at: '' },
+        { role: 'assistant', content: 'Hello! How can I help?', run_id: 'r', created_at: '' },
+      ],
+    })
+
+    render(<Chat sessionId={SESSION} />)
+
+    expect(await screen.findByText('Hello! How can I help?')).toBeInTheDocument()
+  })
+
+  it('shows progress while tools run, streams the text, then the final reply', async () => {
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+    })
+    render(<Chat sessionId={SESSION} />)
+
+    await type('find me a plumber')
+    expect(screen.getByText('find me a plumber')).toBeInTheDocument()
+
+    stream.send('tool', { tool: 'search_and_compare' })
+    expect(await screen.findByText('Searching providers…')).toBeInTheDocument()
+    stream.send('text', { chunk: 'Found ' })
+    expect(await screen.findByText(/Found/)).toBeInTheDocument()
+    stream.send('text', { chunk: 'three.' })
+    stream.send('final', reply({ message: 'Found three plumbers.' }))
+    stream.close()
+
+    expect(await screen.findByText('Found three plumbers.')).toBeInTheDocument()
+    expect(screen.queryByText('Searching providers…')).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Message' })).toBeEnabled()
+  })
+
+  it('draws the approval card from the reply and decides with the shown fingerprint', async () => {
+    const stream = liveStream()
+    const { calls } = fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+      'POST /api/approvals/appr_1/decision': reply({
+        kind: 'booked',
+        message: 'Booked FlowRight Plumbers for Sat 07 Nov, 11:00 at ₹1200. Booking ID bk_9.',
+        booking: {
+          booking_id: 'bk_9',
+          provider_name: 'FlowRight Plumbers',
+          service: 'plumber',
+          slot: CARD.details.slot,
+          price_inr: 1200,
+          status: 'confirmed',
+        },
+      }),
+    })
+    render(<Chat sessionId={SESSION} />)
+    await type('book the 11:00 slot')
+    stream.send('final', reply({ kind: 'needs_approval', message: 'Shall I?', approval: CARD }))
+    stream.close()
+
+    const card = await screen.findByRole('group', { name: 'Approve booking?' })
+    expect(card).toHaveTextContent('FlowRight Plumbers')
+    expect(card).toHaveTextContent('Sat, 07 Nov, 11:00')
+    expect(card).toHaveTextContent('₹1,200')
+
+    await userEvent.click(within(card).getByRole('button', { name: 'Approve' }))
+
+    expect(await screen.findByText(/Booking ID bk_9/)).toBeInTheDocument()
+    expect(calls.find((c) => c.path === '/api/approvals/appr_1/decision')?.body).toEqual({
+      approve: true,
+      fingerprint: 'fp_shown',
+    })
+    expect(within(card).getByRole('button', { name: 'Approve' })).toBeDisabled()
+    expect(screen.getByRole('group', { name: 'Booked' })).toHaveTextContent('bk_9')
+  })
+
+  it('lets the user confirm a suggestion on its card', async () => {
+    const stream = liveStream()
+    const { calls } = fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+      'POST /api/memories/mem_7/confirm': { memory_id: 'mem_7' },
+    })
+    render(<Chat sessionId={SESSION} />)
+    await type('what have you noticed?')
+    stream.send(
+      'final',
+      reply({
+        message: 'Here they are.',
+        suggestions: [
+          { memory_id: 'mem_7', text: 'Usual electrician: Sparks Electricals', reason: '2 jobs' },
+        ],
+      }),
+    )
+    stream.close()
+
+    const card = await screen.findByRole('group', { name: 'Suggestions from your bookings' })
+    await userEvent.click(within(card).getByRole('button', { name: 'Confirm' }))
+
+    expect(await within(card).findByText('Saved')).toBeInTheDocument()
+    expect(calls.some((c) => c.path === '/api/memories/mem_7/confirm')).toBe(true)
+  })
+
+  it('says so when saving a suggestion fails, instead of failing silently', async () => {
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+      'POST /api/memories/mem_7/confirm': Response.json({ detail: 'already decided' }, { status: 409 }),
+    })
+    renderWithToasts(<Chat sessionId={SESSION} />)
+    await type('what have you noticed?')
+    stream.send(
+      'final',
+      reply({ suggestions: [{ memory_id: 'mem_7', text: 'Usual electrician: Sparks', reason: '2 jobs' }] }),
+    )
+    stream.close()
+
+    const card = await screen.findByRole('group', { name: 'Suggestions from your bookings' })
+    await userEvent.click(within(card).getByRole('button', { name: 'Confirm' }))
+
+    expect(await findToast("Couldn't save that: already decided")).toBeInTheDocument()
+    expect(within(card).queryByText('Saved')).not.toBeInTheDocument()
+  })
+
+  it('explains a turn the server refused', async () => {
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: Response.json(
+        { detail: 'ANTHROPIC_API_KEY is not set (add it to backend/.env)' },
+        { status: 503 },
+      ),
+    })
+    render(<Chat sessionId={SESSION} />)
+
+    await type('hi')
+
+    expect(await screen.findByText(/ANTHROPIC_API_KEY is not set/)).toBeInTheDocument()
+  })
+
+  it('Stop stops showing the turn, and says the server will finish it', async () => {
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+    })
+    render(<Chat sessionId={SESSION} />)
+    await type('find me a plumber')
+    stream.send('tool', { tool: 'search_and_compare' })
+    await screen.findByText('Searching providers…')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Stop' }))
+
+    expect(await screen.findByText(/still finishes on the server/)).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Message' })).toBeEnabled()
+  })
+})

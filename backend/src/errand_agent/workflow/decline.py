@@ -33,10 +33,15 @@ def decline_pending(
     session_id: str,
     *,
     run: RunTrace | None = None,
+    only: str | None = None,
 ) -> list[Approval]:
+    """Decline everything pending in the session, or only the approval `only` (a card's
+    own Decline button)."""
     declined: list[Approval] = []
     with atomic(conn):
         for pending in approvals.pending_for_session(session_id):
+            if only is not None and pending.approval_id != only:
+                continue
             declined.append(approvals.reject(pending.approval_id, run=run))
             errands.transition(
                 pending.errand_id, "approval_rejected", run=run, reason="user declined"

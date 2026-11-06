@@ -226,3 +226,38 @@ ids at least as reliably as with JSON.
 [OpenAI function calling guide](https://developers.openai.com/docs/guides/function-calling) ·
 [TOON (telekom)](https://github.com/telekom/toon) ·
 [TOON critical analysis](https://dev.to/ikaganacar/toon-benchmarks-a-critical-analysis-of-different-results-5h66)
+
+## D4. Web UI: SSE with streamed replies; chat beside a tabbed side panel (2026-11-06)
+
+**Status:** accepted; Phase 6.
+
+**Layout.** Chat on the left; a tabbed side panel (Trace, Memory, Bookings, Demo) on the
+right. The demo needs chat and trace side by side ("show the agent's chat and its trace
+side by side"); memory, bookings and demo controls stay one click away. Trace events are
+one line each (icon, type, key fact) and expand to their sanitized JSON on click; runs
+are collapsible under a header with outcome, calls, tokens, cost and time.
+**Rejected:** two fixed panes with a drawer (memory hidden during the demo); three
+columns (cramped below ~1,400px, which matters for a screen recording).
+
+**Transport: SSE, not WebSockets.** `POST /sessions/{id}/messages` answers with an event
+stream (progress lines, text deltas, trace events, then the final reply with its
+code-drawn cards); `GET /events` pushes what arrives unasked (Phase 7's "your provider
+cancelled"). It's how the model providers stream to us and the common pattern for LLM
+chat UIs; each turn stays an ordinary request (fits the per-session lock, curl-able,
+easy to test); browsers reconnect `EventSource` on their own; a Stop button works by
+aborting the request. **Rejected:** WebSockets, which earn their keep with typing
+indicators, presence and many users, none of which we have; switching later only
+touches the transport, since the event types stay the same.
+
+**Streaming replies.** A turn is several model calls (think, call a tool, read the
+result, answer) and only the last produces visible text, so: the answer streams as it
+is written, and the tool phases show progress lines drawn from the trace ("Searching
+plumbers…"). Approval cards, booking confirmations and suggestions stay code-written
+from verified data, after the text; a typed or clicked "yes" never touches the model.
+Caveat: streamed text can't be taken back, so a turn that later hits a limit shows its
+partial text followed by the honest code-written limit message.
+
+**Demo controls.** A dev-only tab (`ERRAND_DEMO_MODE=true`) that triggers failures on
+the mock world through its control plane (timeout after success, slot taken, provider
+cancels, price change at hold), so the assignment's "failure handled live" can be shown
+in one recording without restarts.

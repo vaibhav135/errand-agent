@@ -20,13 +20,23 @@ How:  - Before each request: `meter.charge_model_turn()`, so a request over the 
         trips, it is converted into our LimitExceeded so every limit exit looks the same.
       - Instructions (system + state + memories) and history come from the
         ContextBuilder; the agent itself keeps no conversation state.
+      - Streaming (D4): with `on_text`, each model request is streamed and its visible
+        text passed on chunk by chunk; the returned reply is the same. The budget is
+        charged and the context guard runs before a request opens, as without it.
+        Tools announce themselves through `deps.on_tool` (agent/tool_trace.py).
 """
 
-from collections.abc import Sequence
+from collections.abc import Awaitable, Callable, Sequence
 
 from pydantic_ai import Agent, ModelMessage, ModelResponse, TextPart
 from pydantic_ai.exceptions import UsageLimitExceeded
-from pydantic_ai.messages import ModelRequest, UserPromptPart
+from pydantic_ai.messages import (
+    ModelRequest,
+    PartDeltaEvent,
+    PartStartEvent,
+    TextPartDelta,
+    UserPromptPart,
+)
 from pydantic_ai.models import Model
 from pydantic_ai.usage import UsageLimits
 
@@ -84,6 +94,15 @@ def trace_model_call(
     )
 
 
+def _text_chunk(event: object) -> str | None:
+    """The visible text an event adds, if any (a text part starting, or its delta)."""
+    if isinstance(event, PartStartEvent) and isinstance(event.part, TextPart):
+        return event.part.content
+    if isinstance(event, PartDeltaEvent) and isinstance(event.delta, TextPartDelta):
+        return event.delta.content_delta
+    return None
+
+
 async def run_agent(
     agent: Agent[AgentDeps, str],
     deps: AgentDeps,
@@ -92,6 +111,7 @@ async def run_agent(
     prompt: str,
     instructions: str,
     history: list[ModelMessage],
+    on_text: Callable[[str], Awaitable[None]] | None = None,
 ) -> str:
     limits = None
     if deps.meter is not None:
@@ -115,6 +135,12 @@ async def run_agent(
                     if deps.meter is not None:
                         deps.meter.charge_model_turn()  # refuse before the request is sent
                     started = deps.clock.monotonic()
+                    if on_text is not None:  # stream this request's text as it arrives
+                        async with node.stream(run.ctx) as stream:
+                            async for event in stream:
+                                chunk = _text_chunk(event)
+                                if chunk:
+                                    await on_text(chunk)
                 elif Agent.is_call_tools_node(node):
                     usage = node.model_response.usage
                     trace_model_call(

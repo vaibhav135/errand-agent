@@ -1,5 +1,5 @@
 # Dev tasks. Targets are written for GNU Make 3.81 (the macOS default).
-.PHONY: help install dev dev-backend dev-frontend chat test lint format seed-data calibrate build
+.PHONY: help install dev demo dev-backend dev-frontend chat test lint format seed-data calibrate build
 
 BACKEND := backend
 FRONTEND := frontend
@@ -15,6 +15,9 @@ install: ## Install backend (uv) and frontend (bun) dependencies
 dev: ## Run backend (:8000) and frontend (:5173) together
 	@$(MAKE) -j2 dev-backend dev-frontend
 
+demo: ## Like dev, with the Demo tab (trigger provider failures live)
+	@ERRAND_DEMO_MODE=true $(MAKE) -j2 dev-backend dev-frontend
+
 dev-backend: ## Run FastAPI with reload on :8000
 	cd $(BACKEND) && uv run uvicorn errand_agent.api.app:create_app --factory --reload --port 8000
 
@@ -26,8 +29,9 @@ chat: ## Chat with the live agent in the terminal (needs ERRAND_MODEL + key in b
 
 # ulimit: run under macOS's default open-file limit everywhere, so a descriptor leak
 # fails here too, not only on a default Mac (BUG-9).
-test: ## Run backend tests
+test: ## Run backend and frontend tests
 	cd $(BACKEND) && ulimit -n 256 && uv run pytest
+	cd $(FRONTEND) && bun run test
 
 lint: ## Lint + typecheck backend and frontend
 	cd $(BACKEND) && uv run ruff check . && uv run ruff format --check . && uv run pyright

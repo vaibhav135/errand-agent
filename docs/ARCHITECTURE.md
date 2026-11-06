@@ -88,6 +88,7 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 | `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
 | `ERRAND_CONTEXT_TOKEN_BUDGET` / `ERRAND_MEMORY_TOKEN_BUDGET` | `7500` / `600` (estimated tokens per model request, calibrated never to undercount; 7,500 derived in DECISIONS D3) |
 | `ERRAND_SEED_DEMO_USER` | `true` (load the generated demo user into an empty DB) |
+| `ERRAND_DEMO_MODE` | `false` (expose `/api/demo/*` and the UI's Demo tab: trigger failures live) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | unset; standard names, no prefix |
 
 Local values go in `backend/.env` (gitignored), copied from the committed
@@ -143,6 +144,73 @@ every environment, not only on a default Mac.
   system clock and random ids. `build_handler(services)` makes the `MessageHandler`
   (models and budgets from Settings) for both the chat CLI and the API, so they can't
   drift; it is separate from `build_services` so the app starts without a model key.
+
+### Chat API: `api/chat_routes.py`, `api/events.py`
+- **What:** `POST /api/sessions`; `GET /api/sessions/{id}/messages` (history);
+  `POST /api/sessions/{id}/messages`, which answers with an SSE stream (D4).
+- **Why:** the web UI shows the reply as it is written and the trace as it happens,
+  while each turn stays an ordinary HTTP request (one lock per session, curl-able,
+  testable with the HTTP test client).
+- **How:**
+
+| SSE event | Data | When |
+|---|---|---|
+| `tool` | `{tool}` | just before a tool runs: a progress line |
+| `text` | `{chunk}` | reply text as it arrives |
+| `trace` | the trace event | every event of the session, live |
+| `final` | `{kind, message, approval, booking, suggestions, run_id}` | last: the authoritative reply, from which the UI draws cards |
+
+  The tracer publishes every event to an `EventHub`; a turn's stream subscribes to its
+  session. The turn runs as its own task under `Services.lock_for(session)` (a second
+  message waits); if the client disconnects, the turn still finishes and its reply is
+  saved, since cancelling could interrupt a booking in flight. The handler is built on
+  first use (`Services.handler()`), so the app starts without a key: a turn then
+  answers 503 saying what to set. History hides the code-written "[The app showed…]"
+  note (BUG-8), which is for the model, not the screen.
+  **Card buttons:** `POST /api/approvals/{id}/decision` `{approve, fingerprint}` answers
+  with plain JSON (decided in code, no model, nothing to stream). The UI sends back the
+  fingerprint of the card it displayed, so a card whose details changed since is not
+  approved: the reply says so and carries the current card.
+
+### Trace API: `api/trace_routes.py`
+- **What:** `GET /api/events?session_id=` (SSE push) and `GET /api/sessions/{id}/runs`.
+- **Why:** some runs start with no request (the reconcile pass; Phase 7's "your
+  provider cancelled"), so the trace pane also listens to a push stream; past runs
+  make it whole again after a reload.
+- **How:** the push stream subscribes to the EventHub for one session: ": connected",
+  then a `trace` frame per event, and ": keep-alive" after `HEARTBEAT_SECONDS` (15) of
+  quiet, which also notices a client that left (then it unsubscribes and ends). Past
+  runs are read from the JSONL trace files (newest 50), in a worker thread so a long
+  history can't stall the loop; the reader touches files only, never SQLite.
+
+### Demo API: `api/demo_routes.py`, `mocks/control.py`
+- **What:** `GET /api/demo` -> `{enabled}`; with `ERRAND_DEMO_MODE=true`, `POST
+  /api/demo/next-book` `{outcome}`, `/provider-cancels` `{booking_id}`, `/price-drift`
+  `{provider_id, fraction}`, `/reset`, and `GET /api/demo/providers` (names for the
+  price picker).
+- **Why:** the demo is "a strong plus if one failure is handled live"; these make the
+  provider misbehave on cue (timeout after success, slot taken, a price that changes
+  at hold, a provider cancelling), with no restart.
+- **How:** thin wrappers over `MockControl`, the mock's control plane, which the agent
+  never sees. `script_next_book` puts one scripted outcome on the scenario and resets
+  its cursor (after it, outcomes are random again); `set_price_drift` changes what
+  holds quote; `reset` restores the scenario the world started with. Off by default:
+  action routes are 404 and the UI hides the tab.
+
+### Memory and bookings API: `api/memory_routes.py`
+- **What:** `GET /api/memories` (saved facts and suggestions, apart), `POST
+  /api/memories/{id}/confirm` · `/reject`, `PATCH /api/memories/{id}` `{value}`
+  (correct), `DELETE /api/memories/{id}` (forget), `GET /api/bookings`.
+- **Why:** inspect, correct and forget, explicit vs inferred kept apart (assignment);
+  suggestions decided by the user in code, never through the model (D2). The web UI's
+  memory panel, as `/memories`, `/confirm` and `/reject` are the chat's.
+- **How:** all code, no model. Saved facts carry their source, suggestions their
+  reason. A correction goes through the store's provenance rule: the value typed in the
+  form is the user's own words, so it is both quote and message. Forget also scrubs the
+  fact's words from the stored conversation. Errors: unknown id 404, wrong state (e.g.
+  confirming a fact that isn't a suggestion) 409, a value the key can't hold 422 (caught
+  before ValueError, since pydantic's ValidationError is one). Bookings come from the
+  provider's records.
 
 ### Chat CLI: `api/chat.py` (`make chat`)
 - **What:** a read-reply loop for the demo user over the same handler, databases and
@@ -838,7 +906,11 @@ stateDiagram-v2
   reader's call gets its own `model_call` (tokens taken as the difference on the shared
   usage). PydanticAI's `UsageLimits` sits 3× above our limits as a backstop and is
   converted to `LimitExceeded` if it ever trips. In PydanticAI 2.66 `run.usage` is a
-  property.
+  property. **Streaming** (D4): with `on_text`, each model request is opened with
+  `node.stream(...)` and its visible text (`PartStartEvent` / `TextPartDelta`) passed on
+  chunk by chunk; the returned reply is unchanged, and the budget charge and context
+  guard still run before each request. Tools announce themselves before running through
+  `deps.on_tool` (called by the tool-tracing capability), for progress lines.
 
 ### Message handler: `agent/handler.py`, `agent/prompts.py`
 - **What:** `MessageHandler.handle(session_id=, user_id=, text=)` → `Reply` (a
@@ -874,13 +946,92 @@ user message
   cards are open, goes to the model, which can't approve, so nothing happens without a
   plain yes or a button. A duplicate yes after the booking finds nothing pending and is
   an ordinary message. Two messages in one session at the same time is left to a
-  per-session lock in the API layer.
+  per-session lock in the API layer. `handle(..., on_text=, on_tool=)` streams a model
+  turn's text and announces its tools (D4); a typed or clicked yes / no streams nothing,
+  since no model is involved. `decide(session_id=, approval_id=, fingerprint=,
+  approve=)` is the card's buttons: the same confirm / decline code as a typed yes / no
+  (granted `via="button"`), except that Decline declines that card only. A fingerprint
+  that doesn't match the current card is refused with the current card; a card already
+  decided (a double click) does nothing more. The click is saved as a code-written user
+  line ("[Approved on the card: …]") so the model's next turn knows what was decided.
 
   Next turn the model sees only its saved *text*, not what code drew. So when code
   showed suggestions, the saved reply ends with `[The app showed the user N
   suggestions to review.]` (the count only, never their content; the user's screen
   shows the reply without it) (BUG-8). Approval cards need no note: STATE reports any
   pending approval.
+
+### Web UI: `frontend/` (D4)
+- **What:** React 19 + Tailwind v4 + shadcn (radix-nova). Chat on the left; a tabbed side
+  panel (Trace, Memory, Bookings, and Demo when the server runs in demo mode).
+- **Why:** the demo needs chat and trace side by side; memory and bookings one click away.
+- **How:**
+  - `src/api/client.ts`: one function per backend route. A chat turn is a POST whose
+    response is the event stream, which `EventSource` can't do (GET only), so
+    `src/api/sse.ts` reads the body with `fetch` and parses frames itself, buffering
+    across network chunks (a frame can split anywhere; UTF-8 decoded in stream mode)
+    and skipping comments (": keep-alive"). The live push stream (`/api/events`) does
+    use `EventSource`, which reconnects on its own.
+  - `src/hooks/useSession.ts`: the session id is remembered in localStorage (a
+    per-browser convenience); a remembered session that's gone on the server is
+    replaced, not shown as errors.
+  - Chat (`src/components/chat/`, `src/hooks/useChat.ts`): `tool` events become a
+    transient progress line ("Searching providers…"); `text` chunks fill the reply
+    bubble as they arrive; the `final` reply then replaces the bubble's text and carries
+    the cards, drawn by code from verified data (`ApprovalCard` with Approve / Decline,
+    sending back the fingerprint it displayed; `BookingCard`; `SuggestionsCard` with
+    Confirm / Reject). Replies render as Markdown (react-markdown, which doesn't render
+    raw HTML, so model text can't inject markup). Stop aborts the display only (the
+    reader is cancelled at once): the turn still finishes on the server and its reply is
+    in the history after a reload. Enter sends, Shift+Enter is a new line.
+  - Trace (`src/components/trace/`, `src/hooks/useTrace.ts`): runs newest first, each
+    collapsible under a header (trigger, outcome, calls, tokens, cost, duration;
+    "running…" until it finishes); one line per event with its key fact
+    (`summarize`: e.g. `model_call` est / real tokens, `agent_tool` tool and latency,
+    `state_transition` from → to), limits and errors flagged; click for the JSON.
+    Events come from the past runs, the `/api/events` push and the chat's own turn
+    stream; `mergeEvent` keeps each (run_id, seq) once and in order.
+  - Memory (`src/components/panels/MemoryTab.tsx`): suggestions (Confirm / Reject),
+    booking preferences and personal notes, each labelled "you told me" / "inferred,
+    you confirmed"; Edit corrects in place, pre-filled, budgets sent as numbers, the
+    server's reason shown if a value doesn't fit; provider preferences hold an id, so
+    they can be forgotten but not edited as text; Forget takes a second click ("Forget?
+    Yes") because it also scrubs the conversation. Bookings
+    (`src/components/panels/BookingsTab.tsx`): upcoming, then past, from the provider's
+    records. Both reload when the chat reports a change (`version`).
+  - Demo (`src/components/panels/DemoTab.tsx`, only when `GET /api/demo` says enabled;
+    `make demo` runs with it on): next booking times out after succeeding / slot taken /
+    fails without booking; a provider cancels one of your upcoming confirmed bookings;
+    a provider's holds quote N% more than search (percent in the UI, a fraction on the
+    wire); Reset. Pickers start empty so nothing fires on a default nobody chose; each
+    action says what it set in a toast, and bumps `version` so Bookings reloads.
+  - Toasts (`ui/sonner.tsx`, one `<Toaster>` in `App`): every change the user makes
+    outside the chat turn says how it went: memory confirm / reject / correct / forget,
+    the chat's suggestion card, demo actions, new session. Errors are red toasts, except
+    a refused correction, which stays beside its field. Approve / Decline get none: the
+    outcome already arrives as a chat message. Colours come from the theme tokens, so
+    no theme prop (shadcn's `next-themes` dependency was dropped).
+  - Selected states: the active tab has a solid fill, semibold text and a primary
+    underline; an open trace run or event is tinted with a primary bar on its left,
+    styled from `aria-expanded` so the look and what screen readers hear agree.
+  - `Workspace` holds one session's chat and side panel and is keyed by session id, so
+    a new session starts with a clean chat and trace. The two sit in a resizable group
+    (shadcn `resizable`, react-resizable-panels v4): drag the divider to resize; drag
+    the panel shut, or use the header's panel button, and it unmounts so the chat takes
+    the full width. `useSidePanel` remembers hidden/open and the width separately, the
+    width only while open (a dragged-shut panel would otherwise reopen at 0%). jsdom
+    has no layout, so in tests every click lands on the divider's hit area and the
+    library's drag start blocks focus: tests focus a textbox, then type.
+  - Theme (`src/hooks/useTheme.ts`, `ThemeToggle` in the header): light or dark via the
+    `dark` class on `<html>`. Dark is Catppuccin Mocha (the `--ctp-*` values in
+    `index.css`; another flavour is a swap of those values). First visit follows the
+    system; a pick is kept in localStorage. A small script in `index.html` applies the
+    same rule before the first paint, so a dark reload doesn't flash white.
+    Buttons, tabs and selects get a pointer cursor (`index.css` base layer), which
+    Tailwind v4 no longer sets.
+  - Tests: Vitest + Testing Library on jsdom (`vitest.config.ts` reuses the Vite config,
+    so `@/` resolves the same); `src/test/fakeApi.ts` routes `fetch` by method and path.
+    `make test` runs backend and frontend.
 
 ## Run lifecycle
 

@@ -29,8 +29,8 @@ How:  1. Reconcile first: settle this session's parked side effects (unverified
 
 import logging
 import sqlite3
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass, field
 from typing import Literal
 
 from pydantic_ai.models import Model
@@ -49,7 +49,7 @@ from errand_agent.memory.tokens import estimate_tokens
 from errand_agent.providers.tool_env import ToolEnv
 from errand_agent.tracing.recorder import Tracer
 from errand_agent.workflow.actions import ProviderActionStore
-from errand_agent.workflow.approvals import Approval, ApprovalStore, is_explicit_no
+from errand_agent.workflow.approvals import Approval, ApprovalStore, Via, is_explicit_no
 from errand_agent.workflow.booking import BookingFlow
 from errand_agent.workflow.changes import ChangeFlow
 from errand_agent.workflow.context import ContextBudget, ContextBuilder
@@ -62,6 +62,7 @@ from errand_agent.workflow.outcomes import (
     for_change,
     for_execution,
     run_with_outcome,
+    when,
 )
 from errand_agent.workflow.reconciler import Reconciler
 
@@ -81,6 +82,15 @@ def shown_note(shown: Sequence[Memory]) -> str:
         return ""
     n = len(shown)
     return f"\n\n[The app showed the user {n} suggestion{'' if n == 1 else 's'} to review.]"
+
+
+@dataclass
+class Turn:
+    """One turn's listeners, and what code showed the user during it."""
+
+    on_text: Callable[[str], Awaitable[None]] | None = None
+    on_tool: Callable[[str], Awaitable[None]] | None = None
+    shown: list[Memory] = field(default_factory=list)  # suggestions to draw after the reply
 
 
 @dataclass(frozen=True)
@@ -142,7 +152,17 @@ class MessageHandler:
         self._agent = build_orchestrator()
         self._tool_tokens = tool_definition_tokens(orchestrator_tools())  # sent every request
 
-    async def handle(self, *, session_id: str, user_id: str, text: str) -> Reply:
+    async def handle(
+        self,
+        *,
+        session_id: str,
+        user_id: str,
+        text: str,
+        on_text: Callable[[str], Awaitable[None]] | None = None,
+        on_tool: Callable[[str], Awaitable[None]] | None = None,
+    ) -> Reply:
+        """With `on_text` / `on_tool`, a model turn streams its text and announces each
+        tool before it runs (D4); a typed yes / no is decided in code and streams nothing."""
         try:
             await self._reconciler.reconcile_once(session_id=session_id)
         except Exception:  # the background loop retries; don't block the user
@@ -150,13 +170,13 @@ class MessageHandler:
         self._conversation.append(session_id, "user", text)
 
         run_id = ""
-        shown: list[Memory] = []  # suggestions a tool asked code to show the user
+        turn = Turn(on_text=on_text, on_tool=on_tool)
 
         async def body(ctx: RunContext) -> RunOutcome:
             nonlocal run_id
             run_id = ctx.run.run_id
             return await self._respond(
-                ctx, session_id=session_id, user_id=user_id, text=text, shown=shown
+                ctx, session_id=session_id, user_id=user_id, text=text, turn=turn
             )
 
         outcome = await run_with_outcome(
@@ -170,14 +190,84 @@ class MessageHandler:
             body=body,
         )
         self._conversation.append(
-            session_id, "assistant", outcome.message + shown_note(shown), run_id=run_id
+            session_id, "assistant", outcome.message + shown_note(turn.shown), run_id=run_id
         )
-        return Reply(outcome=outcome, run_id=run_id, suggestions=tuple(shown))
+        return Reply(outcome=outcome, run_id=run_id, suggestions=tuple(turn.shown))
+
+    async def decide(
+        self, *, session_id: str, approval_id: str, fingerprint: str, approve: bool
+    ) -> Reply:
+        """A card's Approve / Decline button: the same decision as a typed yes / no,
+        decided in code. `fingerprint` is the one the UI displayed: if the card's details
+        changed since, nothing happens and the current card comes back. Raises KeyError
+        for an approval that isn't this session's."""
+        approval = self._approvals.get(approval_id)
+        if self._errands.get(approval.errand_id).session_id != session_id:
+            raise KeyError(f"no approval {approval_id!r} in session {session_id!r}")
+        try:
+            await self._reconciler.reconcile_once(session_id=session_id)
+        except Exception:
+            logger.exception("per-run reconcile failed")
+        d = approval.details
+        verb = "Approved" if approve else "Declined"
+        self._conversation.append(  # the click, recorded for the model's next turn
+            session_id,
+            "user",
+            f"[{verb} on the card: {d.provider_name}, {when(d.slot)}, ₹{d.price_inr}]",
+        )
+
+        run_id = ""
+
+        async def body(ctx: RunContext) -> RunOutcome:
+            nonlocal run_id
+            run_id = ctx.run.run_id
+            return await self._decide(ctx, session_id, approval_id, fingerprint, approve)
+
+        outcome = await run_with_outcome(
+            self._tracer,
+            session_id=session_id,
+            trigger="approval_click",
+            budget=self._budget,
+            env=self._env,
+            clock=self._clock,
+            errands=self._errands,
+            body=body,
+        )
+        self._conversation.append(session_id, "assistant", outcome.message, run_id=run_id)
+        return Reply(outcome=outcome, run_id=run_id)
+
+    async def _decide(
+        self, ctx: RunContext, session_id: str, approval_id: str, fingerprint: str, approve: bool
+    ) -> RunOutcome:
+        current = self._approvals.get(approval_id)
+        ctx.errand_id = current.errand_id
+        if current.status != "pending":  # a double click, or decided elsewhere
+            return RunOutcome(
+                kind="answered", message="That card was already decided, so nothing more was done."
+            )
+        if fingerprint != current.fingerprint:
+            return RunOutcome(
+                kind="needs_approval",
+                message="The details on that card changed since it was shown, so I didn't go"
+                " ahead. Please check the current details.",
+                approval=current,
+            )
+        if not approve:
+            decline_pending(
+                self._conn,
+                self._approvals,
+                self._errands,
+                session_id,
+                run=ctx.run,
+                only=approval_id,
+            )
+            return RunOutcome(kind="answered", message=DECLINED[current.action])
+        return await self._confirm(ctx, approval_id, via="button")
 
     # --- the three paths -------------------------------------------------------------
 
     async def _respond(
-        self, ctx: RunContext, *, session_id: str, user_id: str, text: str, shown: list[Memory]
+        self, ctx: RunContext, *, session_id: str, user_id: str, text: str, turn: "Turn"
     ) -> RunOutcome:
         approval_id = self._approvals.resolve_typed_yes(session_id, text)
         if approval_id is not None:
@@ -185,16 +275,19 @@ class MessageHandler:
         if is_explicit_no(text) and self._approvals.pending_for_session(session_id):
             return self._decline(ctx, session_id)
         return await self._converse(
-            ctx, session_id=session_id, user_id=user_id, text=text, shown=shown
+            ctx, session_id=session_id, user_id=user_id, text=text, turn=turn
         )
 
-    async def _confirm(self, ctx: RunContext, approval_id: str) -> RunOutcome:
+    async def _confirm(
+        self, ctx: RunContext, approval_id: str, *, via: Via = "typed"
+    ) -> RunOutcome:
         approval = self._approvals.get(approval_id)
         ctx.errand_id = approval.errand_id
         # A card's details never change (new details mean a new approval), so the
-        # pending approval's fingerprint is exactly what the user was shown.
+        # pending approval's fingerprint is exactly what the user was shown. (A click
+        # also checks the fingerprint the UI sent back: see _decide.)
         self._approvals.grant(
-            approval_id, presented_fingerprint=approval.fingerprint, via="typed", run=ctx.run
+            approval_id, presented_fingerprint=approval.fingerprint, via=via, run=ctx.run
         )
         if approval.action == "book":
             result = await self._booking_flow(ctx).execute(approval.errand_id, approval_id)
@@ -215,7 +308,7 @@ class MessageHandler:
         return RunOutcome(kind="answered", message=message)
 
     async def _converse(
-        self, ctx: RunContext, *, session_id: str, user_id: str, text: str, shown: list[Memory]
+        self, ctx: RunContext, *, session_id: str, user_id: str, text: str, turn: "Turn"
     ) -> RunOutcome:
         errand = self._errands.latest_open(session_id)
         deps = AgentDeps(
@@ -235,6 +328,7 @@ class MessageHandler:
             meter=ctx.meter,
             review_model=self._review_model,
             result_format=self._result_format,
+            on_tool=turn.on_tool,
             errand_id=errand.errand_id if errand else None,
         )
         ctx.errand_id = deps.errand_id
@@ -260,11 +354,12 @@ class MessageHandler:
                 prompt=text,
                 instructions=text_instructions,
                 history=to_history(messages),
+                on_text=turn.on_text,
             )
         finally:
             ctx.errand_id = deps.errand_id  # so an error reports the errand honestly
 
-        shown.extend(deps.suggestions)
+        turn.shown.extend(deps.suggestions)
         card = self._live_card(deps.cards)
         if card is not None:
             message = reply.strip() or "Please check the details on the card and approve."
