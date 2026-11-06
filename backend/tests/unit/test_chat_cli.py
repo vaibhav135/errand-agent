@@ -199,6 +199,23 @@ def test_without_a_key_it_says_what_to_set(app_settings: Settings, app_clock: Fa
     assert "ANTHROPIC_API_KEY" in terminal.text and "backend/.env" in terminal.text
 
 
+def test_ctrl_c_mid_turn_exits_gracefully(
+    app_settings: Settings, app_clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    keyed = app_settings.model_copy(update={"anthropic_api_key": SecretStr("sk-ant-test")})
+
+    async def interrupted(*args: object) -> None:
+        raise KeyboardInterrupt  # what asyncio.run raises after Ctrl+C during a turn
+
+    monkeypatch.setattr("errand_agent.api.chat._start", interrupted)
+    terminal = Terminal()
+
+    code = main(settings=keyed, clock=app_clock, read=terminal.read, write=terminal.write)
+
+    assert code == 0  # no traceback
+    assert "Interrupted" in terminal.text and "checked with the provider" in terminal.text
+
+
 def test_default_models_are_announced(app_settings: Settings, app_clock: FakeClock) -> None:
     keyed = app_settings.model_copy(update={"anthropic_api_key": SecretStr("sk-ant-test")})
     terminal = Terminal()  # leaves at once: no model request is made
