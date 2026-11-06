@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     max_tool_calls: int = Field(default=20, ge=1)
     max_run_seconds: float = Field(default=60.0, gt=0)
 
+    # Fixed model-context budget per turn (estimated tokens), and the memories' share.
+    context_token_budget: int = Field(default=6000, ge=500)
+    memory_token_budget: int = Field(default=600, ge=0)
+
     # Background reconciler cadence; 0 disables the loop (the startup pass still runs).
     reconcile_interval_seconds: float = Field(default=30.0, ge=0)
 

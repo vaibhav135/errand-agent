@@ -140,6 +140,14 @@ class ApprovalStore:
             raise KeyError(f"no approval {approval_id!r}")
         return _approval(row)
 
+    def live_for_errand(self, errand_id: str) -> Approval | None:
+        """The errand's pending or granted approval, if any (at most one, by DB index)."""
+        row = self._conn.execute(
+            "SELECT * FROM approvals WHERE errand_id = ? AND status IN ('pending', 'granted')",
+            (errand_id,),
+        ).fetchone()
+        return _approval(row) if row else None
+
     def pending_for_session(self, session_id: str) -> list[Approval]:
         rows = self._conn.execute(
             "SELECT a.* FROM approvals a JOIN errands e USING (errand_id)"

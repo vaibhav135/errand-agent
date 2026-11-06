@@ -81,6 +81,7 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 | `ERRAND_MOCK_SEED` | `42` |
 | `ERRAND_MAX_MODEL_TURNS` / `ERRAND_MAX_TOOL_CALLS` / `ERRAND_MAX_RUN_SECONDS` | `8` / `20` / `60` (per-run hard limits) |
 | `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
+| `ERRAND_CONTEXT_TOKEN_BUDGET` / `ERRAND_MEMORY_TOKEN_BUDGET` | `6000` / `600` (estimated tokens per model turn) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | unset; standard names, no prefix |
 
 Local values go in `backend/.env` (gitignored), copied from the committed
@@ -503,6 +504,29 @@ User information comes in three kinds, kept in three places:
   The token estimate is deterministic (offline evals) and pessimistic: English averages
   about 4 characters per token, so packets built to it stay under the real budget.
 
+### Context builder: `workflow/context.py`
+- **What:** `ContextBuilder.build(...)` → `ContextPacket` (system, state, memories,
+  messages, per-section tokens) plus a `context_sent` trace event every turn.
+- **Why:** a fixed budget; only relevant, current preferences; never forgotten or
+  unconfirmed facts; never profile PII; and a per-turn log that tests can check.
+- **How:** filled in priority order until `ERRAND_CONTEXT_TOKEN_BUDGET` (6000) is used:
+
+```
+1. system prompt                                         always
+2. state: today (IST), errand kind/state, requirements,  always (structured, from the DB,
+   still needed / ask once, pending approval,             so old turns can be dropped
+   address labels+areas, has phone/email                   without an LLM summary)
+3. relevant memories                                     ≤ ERRAND_MEMORY_TOKEN_BUDGET (600)
+4. recent conversation, newest first while it fits       then restored to chronological
+```
+
+  If 1 + 2 alone don't fit, `ContextOverflow` is raised instead of truncating the system
+  prompt. `context_sent` records the budget, tokens per section, included memory ids,
+  every excluded id with its reason, messages included and dropped, and the state and
+  memory text (no message bodies; they're in `messages`). Tests prove forgotten and
+  pending values, and the user's name, phone, email and street, appear nowhere in the
+  packet.
+
 ### Run outcomes: `workflow/outcomes.py`
 - **What:** `RunOutcome` (kind, user-facing message, optional booking / approval card),
   mappers `for_execution` / `for_change` / `for_limit` / `for_error`, and
@@ -659,7 +683,7 @@ crashes.
 | `run_started` / `run_finished` | `trigger` / `outcome`, `totals` (calls, tokens, cost, `cost_complete`, `duration_ms`) |
 | `state_transition` | `from`, `to`, `reason` |
 | `model_call` | `model`, `input_tokens`, `output_tokens`, `latency_ms`, `cost_usd` |
-| `context_sent` | memory IDs included, token count, budget |
+| `context_sent` | budget, tokens per section, memory ids included, excluded ids with reasons, messages included / dropped, state and memory text |
 | `tool_call` | `tool`, `args`, `result`, `status`, `latency_ms`, `error` |
 | `approval` | requested / granted / rejected / invalidated, `approval_id`, fingerprint |
 | `memory` | remembered / suggested / confirmed / rejected / forgotten, key, scope, source, status |
