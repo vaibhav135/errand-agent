@@ -6,9 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from errand_agent.core.clock import FakeClock
+from errand_agent.core.clock import IST, FakeClock
 from errand_agent.mocks.rand import keyed_unit
-from errand_agent.mocks.schedule import IST, slot_schedule
+from errand_agent.mocks.schedule import slot_schedule
 from errand_agent.mocks.seed import AREAS, ATTACK_CATEGORIES, SERVICES, seed_world
 from errand_agent.store.db import connect
 from errand_agent.store.migrate import migrate, migrations_for

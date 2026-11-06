@@ -54,7 +54,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, TypeAdapter
 
-from errand_agent.core.clock import Clock, utc_text
+from errand_agent.core.clock import IST, Clock, utc_text
 from errand_agent.core.ids import IdGen
 from errand_agent.mocks.scenario import (
     Scenario,
@@ -62,7 +62,7 @@ from errand_agent.mocks.scenario import (
     is_slot_conflict,
     quoted_price,
 )
-from errand_agent.mocks.schedule import IST, slot_schedule
+from errand_agent.mocks.schedule import slot_schedule
 from errand_agent.mocks.seed import AREAS, SERVICES, seed_world
 from errand_agent.providers.errors import ProviderTimeout, ProviderUnavailable
 from errand_agent.providers.models import (

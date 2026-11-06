@@ -28,8 +28,7 @@ from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from errand_agent.core.clock import Clock, utc_text
-from errand_agent.mocks.schedule import IST
+from errand_agent.core.clock import IST, Clock, utc_text
 from errand_agent.providers.models import BookingStatus, Service
 from errand_agent.store.db import transaction
 

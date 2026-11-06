@@ -16,11 +16,11 @@ How:  Hourly starts 08:00-18:00 IST (last slot ends 19:00). Each hour is offered
       means mornings in Bengaluru; storage stays UTC (see the mock_world schema).
 """
 
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time
 
+from errand_agent.core.clock import IST
 from errand_agent.mocks.rand import keyed_unit
 
-IST = timezone(timedelta(hours=5, minutes=30), name="IST")
 FIRST_HOUR = 8
 LAST_HOUR = 18
 OFFER_SHARE = 0.55
