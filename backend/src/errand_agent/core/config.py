@@ -68,8 +68,10 @@ class Settings(BaseSettings):
     max_tool_calls: int = Field(default=20, ge=1)
     max_run_seconds: float = Field(default=60.0, gt=0)
 
-    # Fixed model-context budget per turn (estimated tokens), and the memories' share.
-    context_token_budget: int = Field(default=6000, ge=500)
+    # Fixed model-context budget per request (estimated tokens, calibrated never to
+    # undercount), and the memories' share. 7,500 is derived from measured needs
+    # (docs/DECISIONS.md, D3), not picked.
+    context_token_budget: int = Field(default=7500, ge=500)
     memory_token_budget: int = Field(default=600, ge=0)
 
     # Load the generated demo user (profile, 55 memories, 200 messages) into an empty DB.

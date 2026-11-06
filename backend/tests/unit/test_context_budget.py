@@ -82,11 +82,13 @@ def events(world: World, kind: str) -> list[dict[str, Any]]:
 async def test_every_request_fits_the_budget(world: World) -> None:
     model = bookings_four_times()  # each lookup returns the whole booking history
 
-    reply = await send(world, model, total=4500)
+    # A run starts at ~4,050 (tool schemas + hidden tool prompt + instructions) and each
+    # lookup adds ~1,100: 6,000 holds one result but not four, so masking must kick in.
+    reply = await send(world, model, total=6000)
 
     assert reply.outcome.kind == "answered"
     assert len(model.sizes) == 5
-    assert max(model.sizes) <= 4500, model.sizes
+    assert max(model.sizes) <= 6000, model.sizes
 
 
 async def test_tool_definitions_are_counted(world: World) -> None:
@@ -99,7 +101,7 @@ async def test_tool_definitions_are_counted(world: World) -> None:
 async def test_a_run_that_cannot_fit_ends_honestly(world: World) -> None:
     model = Measuring([ToolCallPart("find_my_bookings", {})], [TextPart("never sent")])
 
-    reply = await send(world, model, total=3000)  # room to start, not for the result
+    reply = await send(world, model, total=4500)  # room to start (~4,050), not for a result
 
     assert reply.outcome.kind == "limit_reached"
     assert len(model.sizes) == 1  # the oversized second request was never made

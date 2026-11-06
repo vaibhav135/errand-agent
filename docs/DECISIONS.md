@@ -7,7 +7,7 @@ shaped that way when the choice wasn't obvious. Newest last.
 ## D1. Context: session-scoped history, a budget that counts everything (2026-11-06)
 
 **Status:** implemented by the BUG-3 fix. How it works now: ARCHITECTURE.md, "Context
-builder" (the budget split: tools ~2,000, system, state, memories ≤600, working room
+builder" (the budget split: tools ~3,270 incl. the hidden tool prompt, system, state, memories ≤600, working room
 1,500, then this session's messages) and "Context guard" (in-run masking).
 
 **Trigger:** the first live chat (BUGS.md, BUG-2 and BUG-3). On a plain "hi", all 201
@@ -121,3 +121,67 @@ conversation.
 - *An LLM extracting preferences from vague conversation* (Mem0-style): could fit as a
   future way to *create* pending suggestions (the model may propose; it must never be
   handed unconfirmed facts back), but isn't needed for the requirements.
+
+## D3. Counting tokens honestly, and sizing the budget from measured needs (2026-11-06)
+
+**Status:** implemented by the BUG-7 fix (counting, budget 7,500); the follow-ups below
+re-derive the budget once the fixed part is slimmed.
+
+**Trigger:** BUG-7. The trace's calibration field showed our estimate ~45% below the
+provider's real count (4,843 vs 7,474), so a 6,000 "cap" let 7,474 through.
+
+**Counting.** Claude's tokenizer isn't published; local libraries are unverified for
+current models, and newer Claude tokenizers produce ~30% more tokens than earlier ones
+(Anthropic docs; independent measurements 1.45-1.47×). Anthropic's `count_tokens`
+endpoint is the reference (free, rate-limited). Measured on our own texts with
+claude-sonnet-5-5: prose and tool schemas 2.58-3.00 chars/token, JSON data 2.04, and a
+321-token hidden tool-use prompt whenever tools are offered.
+**Decision:** a calibrated offline estimate: text 2.4, JSON data 1.9, +350 per request
+with tools, each ~7% below the lowest measurement so it never undercounts; recorded
+samples (`make calibrate`) and a test keep it honest; traces keep showing drift.
+**Rejected:** counting live before every request (exact, but latency, rate limits, no
+offline evals, Anthropic-only); a blunt ×1.6 factor (still a guess, wastes budget);
+`tiktoken` (exact only for OpenAI models; not used here yet, so deferred).
+
+**Sizing the budget.** No source names a "right" budget for a task agent; the guidance
+is "the smallest set of high-signal tokens" (Anthropic), and degradation with input
+length shows up well before the window is full (Chroma), but published thresholds
+(e.g. context editing's 100,000-token default) are far above our scale. So the budget is
+the smallest that fits a realistic worst-case request, measured in real tokens:
+
+| Component | Real tokens |
+|---|---|
+| tool schemas + hidden tool-use prompt | ~3,030 |
+| system prompt | 542 |
+| state | ~100-200 |
+| memories (cap) | ≤ 600 |
+| working room: worst realistic run (reschedule: bookings 1,002 + slots 340 + calls) | ~1,500 |
+| history: a 10-exchange errand session (live chat: avg 86, max 400 per message) | ~1,700 |
+| **total** | **≈ 7,500** |
+
+**How we compare with real conversations:** general chat averages 2-2.5 turns
+(LMSYS-Chat-1M, WildChat); tool-using customer-service tasks 4-10 turns with 3-9 tool
+calls (τ-bench); τ²-bench airline on claude-sonnet-5-5 averages $0.16 per task, in line
+with our ~$0.15-0.30 per booking. Our conversation share is normal; our *fixed* share
+(~3,700 per request) is heavy next to lean setups (600-1,500 input per call in vendor
+cost models).
+
+**Decision:** budget 7,500 now (the measured need), then slim the fixed part (trim tool
+descriptions and parameters; `list_memories` returns booking-relevant facts plus a note
+count, since its 2,326-token result can't fit the working room) and re-derive; it may
+land near 6,000-6,500. TOON (tabular encoding for list-shaped tool results) measured
+27-40% smaller than compact JSON on our data; to be adopted for the flat lists only
+after a test shows the model still gets every id and slot it needs.
+
+**Sources:** [Anthropic token counting](https://docs.anthropic.com/en/docs/build-with-claude/token-counting) ·
+[Anthropic tool use pricing and tokens](https://docs.anthropic.com/claude/docs/tool-use-pricing-and-tokens) ·
+[Claude context editing](https://docs.claude.com/en/docs/build-with-claude/context-editing) ·
+[Anthropic context engineering](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) ·
+[Chroma "Context Rot" (summary)](https://www.zenml.io/llmops-database/context-rot-evaluating-llm-performance-degradation-with-increasing-input-tokens) ·
+[LMSYS-Chat-1M](https://arxiv.org/pdf/2309.11998v2) ·
+[WildChat](https://arxiv.org/pdf/2405.01470) ·
+[τ-bench](https://arxiv.org/abs/2406.12045?context=cs) ·
+[τ²-bench airline leaderboard](https://openrouter.ai/benchmarks/tau2-bench-airline) ·
+[OpenAI function calling guide](https://developers.openai.com/docs/guides/function-calling) ·
+[TOON (telekom)](https://github.com/telekom/toon) ·
+[TOON critical analysis](https://dev.to/ikaganacar/toon-benchmarks-a-critical-analysis-of-different-results-5h66)

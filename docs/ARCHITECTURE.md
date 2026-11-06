@@ -86,7 +86,7 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 | `ERRAND_MOCK_SEED` | `42` |
 | `ERRAND_MAX_MODEL_TURNS` / `ERRAND_MAX_TOOL_CALLS` / `ERRAND_MAX_RUN_SECONDS` | `8` / `20` / `60` (per-run hard limits) |
 | `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
-| `ERRAND_CONTEXT_TOKEN_BUDGET` / `ERRAND_MEMORY_TOKEN_BUDGET` | `6000` / `600` (estimated tokens per model turn) |
+| `ERRAND_CONTEXT_TOKEN_BUDGET` / `ERRAND_MEMORY_TOKEN_BUDGET` | `7500` / `600` (estimated tokens per model request, calibrated never to undercount; 7,500 derived in DECISIONS D3) |
 | `ERRAND_SEED_DEMO_USER` | `true` (load the generated demo user into an empty DB) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | unset; standard names, no prefix |
 
@@ -545,7 +545,8 @@ User information comes in three kinds, kept in three places:
 ### Memory selection: `memory/selection.py`, `memory/tokens.py`
 - **What:** `select_memories(memories, service=, budget_tokens=)` → included memories,
   every excluded one **with its reason**, the rendered text and its token count.
-  `estimate_tokens(text)` = ceil(chars / 3.5).
+  `estimate_tokens(text)` = ceil(chars / 2.4); `estimate_json_tokens(text)` =
+  ceil(chars / 1.9) for tool arguments and results; `TOOL_USE_OVERHEAD_TOKENS` = 350.
 - **Why:** "only relevant, current preferences may reach the model; forgotten facts and
   unconfirmed inferred facts never". Deciding it in code makes it provable per turn.
 - **How:**
@@ -557,20 +558,28 @@ User information comes in three kinds, kept in three places:
 | active and relevant | included by priority (provider, time window, budget, default address, notes), newest first, while it fits; else `over_budget` |
 
   Each line says where the fact came from ("you told me" / "inferred, you confirmed").
-  The token estimate is deterministic (offline evals) and pessimistic: English averages
-  about 4 characters per token, so packets built to it stay under the real budget.
+  The token estimate is deterministic (offline evals) and **calibrated never to
+  undercount** (BUG-7): `make calibrate` measures exact sample texts with Anthropic's
+  `count_tokens` into `tests/data/token_calibration.json` (claude-sonnet-5-5: text
+  2.58-3.00 chars/token, JSON data 2.04, a 321-token hidden tool-use prompt), and the
+  ratios sit ~7% below the lowest measured value. A test fails if any recorded sample
+  is estimated below its real count; `model_call` traces keep showing estimate vs real,
+  so re-calibrate after a model change. Claude's tokenizer isn't published, so an
+  exact local count isn't possible; for OpenAI models `tiktoken` could be (not needed
+  yet, see D3).
 
 ### Context builder: `workflow/context.py`
 - **What:** `ContextBuilder.build(...)` → `ContextPacket` (system, state, memories,
   messages, per-section tokens) plus a `context_sent` trace event every turn.
 - **Why:** a fixed budget; only relevant, current preferences; never forgotten or
   unconfirmed facts; never profile PII; and a per-turn log that tests can check.
-- **How:** `ERRAND_CONTEXT_TOKEN_BUDGET` (6000) covers **everything a request carries**
-  (decision D1 in [DECISIONS.md](DECISIONS.md), after BUG-3). Filled in priority order:
+- **How:** `ERRAND_CONTEXT_TOKEN_BUDGET` (7,500, derived from measured needs: D3)
+  covers **everything a request carries** (decision D1 in [DECISIONS.md](DECISIONS.md),
+  after BUG-3). Filled in priority order:
 
 ```
-1. tool definitions (17 schemas)                          always  ~2,000, measured from
-                                                                  the agent's real tools
+1. tool definitions (16 schemas) + the provider's         always  ~3,270 estimated
+   hidden tool-use prompt                                         (~3,040 real)
 2. system prompt                                          always
 3. state: today (IST), errand kind/state, requirements,   always  (structured, from the DB,
    still needed / ask once, pending approval,                     so old turns can be

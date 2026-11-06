@@ -60,7 +60,7 @@ class ContextOverflow(Exception):
 class ContextBudget(BaseModel):
     model_config = ConfigDict(frozen=True)
 
-    total: int = 6000
+    total: int = 7500  # derived from measured needs: docs/DECISIONS.md, D3
     memories: int = 600
     # Kept free for the run's own tool calls and results (a search, then a proposal);
     # beyond it, the context guard masks older results rather than fail.
