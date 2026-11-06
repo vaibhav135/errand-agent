@@ -147,7 +147,8 @@ services directly run the app lifespan in their own loop (`app.router.lifespan_c
   approval's stored details, never the model's text. Each reply ends with a footer from
   the run's `run_finished` event: outcome · model calls · tokens · cost · seconds ·
   trace file path (dimmed only on a real terminal). No model configured → what to set,
-  exit code 2.
+  exit code 2. Anything starting with `/` is a chat command handled locally (`/quit`,
+  `/exit`; others get "Unknown command"), never sent to the model or saved (BUG-4).
 
 ### Migrations: `store/migrate.py`
 - **What:** `migrate(conn, directory, clock)` applies `NNNN_name.sql` files in order.
