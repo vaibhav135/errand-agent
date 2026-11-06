@@ -1,10 +1,12 @@
 """Conversation: what the user and the assistant said, across sessions.
 
-What: `ConversationStore.append / for_session / recent_for_user`.
+What: `ConversationStore.append / for_session / count_in_other_sessions /
+      recent_for_user`.
 
-Why:  The context builder needs the recent conversation (newest first, so it can fill
-      the token budget from the most recent turn backwards), and the assignment seeds a
-      long prior conversation that spans earlier sessions.
+Why:  The context builder needs the current session's conversation (it fills the
+      token budget from the most recent turn backwards), and the assignment seeds a
+      long prior conversation that spans earlier sessions: stored and inspectable,
+      but never sent to the model (docs/DECISIONS.md, D1).
 
 How:  Only user and assistant text is stored; tool calls and results live in traces
       and workflow tables. Ordering is by time, then by insertion (rowid), so messages
@@ -80,6 +82,15 @@ class ConversationStore:
             (session_id,),
         ).fetchall()
         return [_message(r) for r in rows]
+
+    def count_in_other_sessions(self, user_id: str, session_id: str) -> int:
+        """How many of the user's messages belong to sessions other than this one."""
+        row = self._conn.execute(
+            "SELECT count(*) FROM messages m JOIN sessions s USING (session_id)"
+            " WHERE s.user_id = ? AND m.session_id != ?",
+            (user_id, session_id),
+        ).fetchone()
+        return row[0]
 
     def recent_for_user(self, user_id: str, *, limit: int | None = None) -> list[Message]:
         """The user's messages across sessions, newest first."""

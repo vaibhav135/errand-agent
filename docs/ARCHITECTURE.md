@@ -333,7 +333,9 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
   bounds it). `get_booking_status` is **budget-exempt** (counted and traced, never
   blocked): after a side effect, finding out what happened must always be possible;
   the executor caps it itself. A limit hit emits `limit_hit` and raises
-  `LimitExceeded`, which ends the *run* with a clear outcome, never the errand.
+  `LimitExceeded`, which ends the *run* with a clear outcome, never the errand. The
+  context guard reports a request that can't fit the context budget through the same
+  meter (`refuse_context`, limit `context_tokens`).
 
 ### Ranking: `workflow/ranking.py`
 - **What:** `rank_options(providers, requirements)` → the top 3 options, each with up to
@@ -553,23 +555,48 @@ User information comes in three kinds, kept in three places:
   messages, per-section tokens) plus a `context_sent` trace event every turn.
 - **Why:** a fixed budget; only relevant, current preferences; never forgotten or
   unconfirmed facts; never profile PII; and a per-turn log that tests can check.
-- **How:** filled in priority order until `ERRAND_CONTEXT_TOKEN_BUDGET` (6000) is used:
+- **How:** `ERRAND_CONTEXT_TOKEN_BUDGET` (6000) covers **everything a request carries**
+  (decision D1 in [DECISIONS.md](DECISIONS.md), after BUG-3). Filled in priority order:
 
 ```
-1. system prompt                                         always
-2. state: today (IST), errand kind/state, requirements,  always (structured, from the DB,
-   still needed / ask once, pending approval,             so old turns can be dropped
-   address labels+areas, has phone/email                   without an LLM summary)
-3. relevant memories                                     ≤ ERRAND_MEMORY_TOKEN_BUDGET (600)
-4. recent conversation, newest first while it fits       then restored to chronological
+1. tool definitions (17 schemas)                          always  ~2,000, measured from
+                                                                  the agent's real tools
+2. system prompt                                          always
+3. state: today (IST), errand kind/state, requirements,   always  (structured, from the DB,
+   still needed / ask once, pending approval,                     so old turns can be
+   address labels+areas, has phone/email                          dropped without a summary)
+4. relevant memories                                      ≤ ERRAND_MEMORY_TOKEN_BUDGET (600)
+5. working room for the run's own tool calls / results    1,500 reserved, never filled here
+6. the CURRENT SESSION's conversation, newest first       whatever is left; restored to
+                                                          chronological order
 ```
 
-  If 1 + 2 alone don't fit, `ContextOverflow` is raised instead of truncating the system
-  prompt. `context_sent` records the budget, tokens per section, included memory ids,
-  every excluded id with its reason, messages included and dropped, and the state and
-  memory text (no message bodies; they're in `messages`). Tests prove forgotten and
-  pending values, and the user's name, phone, email and street, appear nowhere in the
-  packet.
+  Earlier sessions are **never sent**: memories, state and tools carry continuity
+  across sessions. `messages_out_of_scope` counts them, so the trace proves the long
+  seeded conversation stays out. If 1-3 alone don't fit, `ContextOverflow` is raised
+  instead of truncating the system prompt. `context_sent` records the budget (total,
+  memories, working), tokens per section including `tools`, included memory ids, every
+  excluded id with its reason, messages included / dropped / out of scope, and the
+  state and memory text (no message bodies; they're in `messages`). Tests prove
+  forgotten and pending values, and the user's name, phone, email and street, appear
+  nowhere in the packet. Within a run, the context guard (below) keeps every later
+  request inside the same budget.
+
+### Context guard: `agent/budget.py`
+- **What:** `guard_context`, a PydanticAI `ProcessHistory` capability on the
+  orchestrator, run before **every** model request; `tool_definition_tokens()`.
+- **Why:** the ContextBuilder sizes what a run starts with, but each tool call and
+  result is appended to the messages, so later requests grow (BUG-3: 2,457 → 5,062
+  against 4,500). The cap must hold for every request.
+- **How:** size = tool definitions + instructions (fixed, set on the deps by the
+  handler) + every message part. Over budget → **observation masking**: this run's
+  oldest tool results become `[result omitted to fit the context budget]`, oldest
+  first, never the newest ones the model is about to read; masks persist for the rest
+  of the run. Still over → `BudgetMeter.refuse_context` traces `limit_hit:
+  context_tokens` and the run ends `limit_reached`; the oversized request is never
+  sent. Each request's estimate goes into `model_call.estimated_input_tokens`, next to
+  the provider's real count. `async` because PydanticAI runs a sync processor in a
+  worker thread, which our SQLite connections refuse.
 
 ### Demo-user seed: `memory/seedgen.py`, `memory/seed.py`
 - **What:** a deterministic generator (`make seed-data`) writes the committed
@@ -842,13 +869,13 @@ crashes.
 |---|---|
 | `run_started` / `run_finished` | `trigger` / `outcome`, `totals` (calls, tokens, cost, `cost_complete`, `duration_ms`) |
 | `state_transition` | `from`, `to`, `reason` |
-| `model_call` | `agent` (orchestrator / review-reader), `model`, `input_tokens`, `output_tokens`, `latency_ms`, `cost_usd` |
-| `context_sent` | budget, tokens per section, memory ids included, excluded ids with reasons, messages included / dropped, state and memory text |
+| `model_call` | `agent` (orchestrator / review-reader), `model`, `input_tokens`, `estimated_input_tokens` (the context guard's estimate; calibration), `output_tokens`, `latency_ms`, `cost_usd` |
+| `context_sent` | budget (total, memories, working), tokens per section incl. `tools`, memory ids included, excluded ids with reasons, messages included / dropped / out of scope, state and memory text |
 | `tool_call` | `tool`, `args`, `result`, `status`, `latency_ms`, `error` |
 | `approval` | requested / granted / rejected / invalidated, `approval_id`, fingerprint |
 | `memory` | remembered / suggested / confirmed / rejected / forgotten, key, scope, source, status |
 | `profile` | changed field names only (never values) |
-| `limit_hit`, `error` | which limit / error type and message |
+| `limit_hit`, `error` | which limit (`model_turns`, `tool_calls`, `wall_clock`, `context_tokens`) / error type and message |
 
 ## Runtime data
 

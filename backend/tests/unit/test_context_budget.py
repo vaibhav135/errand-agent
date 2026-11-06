@@ -79,7 +79,6 @@ def events(world: World, kind: str) -> list[dict[str, Any]]:
     return [e.to_dict() for e in world.events if e.type == kind]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-3: in-run tool results grow past the budget")
 async def test_every_request_fits_the_budget(world: World) -> None:
     model = bookings_four_times()  # each lookup returns the whole booking history
 
@@ -90,7 +89,6 @@ async def test_every_request_fits_the_budget(world: World) -> None:
     assert max(model.sizes) <= 4500, model.sizes
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-3: tool definitions aren't counted")
 async def test_tool_definitions_are_counted(world: World) -> None:
     await send(world, Measuring([TextPart("Hello!")]), total=6000, text="hi")
 
@@ -98,7 +96,6 @@ async def test_tool_definitions_are_counted(world: World) -> None:
     assert sent["tokens"].get("tools", 0) > 1000  # 17 tool schemas
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-3: an oversized request is sent anyway")
 async def test_a_run_that_cannot_fit_ends_honestly(world: World) -> None:
     model = Measuring([ToolCallPart("find_my_bookings", {})], [TextPart("never sent")])
 

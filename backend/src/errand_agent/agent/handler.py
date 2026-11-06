@@ -30,15 +30,17 @@ from dataclasses import dataclass
 
 from pydantic_ai.models import Model
 
+from errand_agent.agent.budget import tool_definition_tokens
 from errand_agent.agent.deps import AgentDeps
 from errand_agent.agent.loop import run_agent, to_history
-from errand_agent.agent.orchestrator import build_orchestrator
+from errand_agent.agent.orchestrator import build_orchestrator, orchestrator_tools
 from errand_agent.agent.prompts import SYSTEM_PROMPT, instructions
 from errand_agent.core.clock import Clock
 from errand_agent.core.ids import IdGen
 from errand_agent.memory.conversation import ConversationStore
 from errand_agent.memory.profile import ProfileStore
 from errand_agent.memory.store import MemoryStore
+from errand_agent.memory.tokens import estimate_tokens
 from errand_agent.providers.tool_env import ToolEnv
 from errand_agent.tracing.recorder import Tracer
 from errand_agent.workflow.actions import ProviderActionStore
@@ -95,6 +97,7 @@ class MessageHandler:
         self._model = model
         self._review_model = review_model
         self._budget = budget or RunBudget()
+        self._context_budget = context_budget or ContextBudget()
         self._errands = ErrandStore(conn, clock=clock, ids=ids)
         self._approvals = ApprovalStore(conn, clock=clock, ids=ids)
         self._actions = ProviderActionStore(conn, clock=clock)
@@ -108,7 +111,7 @@ class MessageHandler:
             memories=self._memories,
             profiles=self._profiles,
             conversation=self._conversation,
-            budget=context_budget or ContextBudget(),
+            budget=self._context_budget,
         )
         self._reconciler = Reconciler(
             conn=conn,
@@ -120,6 +123,7 @@ class MessageHandler:
             tracer=tracer,
         )
         self._agent = build_orchestrator()
+        self._tool_tokens = tool_definition_tokens(orchestrator_tools())  # sent every request
 
     async def handle(self, *, session_id: str, user_id: str, text: str) -> Reply:
         try:
@@ -215,17 +219,21 @@ class MessageHandler:
             errand_id=deps.errand_id,
             system=SYSTEM_PROMPT,
             run=ctx.run,
+            tool_tokens=self._tool_tokens,
         )
         messages = list(packet.messages)
         if messages and messages[-1] == ("user", text):
             messages.pop()  # the message being answered goes once, as the prompt
+        text_instructions = instructions(packet)
+        deps.context_limit = self._context_budget.total  # the guard caps every request
+        deps.fixed_tokens = self._tool_tokens + estimate_tokens(text_instructions)
         try:
             reply = await run_agent(
                 self._agent,
                 deps,
                 model=self._model,
                 prompt=text,
-                instructions=instructions(packet),
+                instructions=text_instructions,
                 history=to_history(messages),
             )
         finally:

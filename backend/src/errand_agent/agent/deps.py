@@ -13,6 +13,9 @@ How:  - `env` is the GuardedToolEnv for this run: every provider call is traced 
         and `update_profile` are checked against.
       - Tools record approval cards they produced in `cards`; the message handler
         shows those (code-rendered) alongside the model's reply.
+      - `context_limit` / `fixed_tokens` let the context guard (agent/budget.py) cap
+        every request of the run; it records each request's size in
+        `request_estimate` for the trace.
 """
 
 import sqlite3
@@ -53,6 +56,11 @@ class AgentDeps:
     review_model: Model | None = None  # the quarantined review reader's model
     errand_id: str | None = None
     cards: list[Approval] = field(default_factory=list)
+    # Context budget for every request in this run (None = unbudgeted), the part every
+    # request carries (tool definitions + instructions), and the last request's size.
+    context_limit: int | None = None
+    fixed_tokens: int = 0
+    request_estimate: int | None = None
 
     def _flow_kwargs(self) -> dict[str, object]:
         return {

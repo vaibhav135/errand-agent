@@ -204,7 +204,6 @@ def builder_for(seeded: sqlite3.Connection, clock: FakeClock, **budget: int) -> 
     )
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-3: history comes from every session of the user")
 def test_only_the_current_session_reaches_the_model(
     seeded: sqlite3.Connection, clock: FakeClock
 ) -> None:
@@ -219,8 +218,7 @@ def test_only_the_current_session_reaches_the_model(
     )
 
     assert p.messages == [("user", "hi"), ("assistant", "Hello! How can I help?")]
-    # getattr until the field exists; the fix commit reads it directly
-    assert getattr(p, "messages_out_of_scope", None) == 200  # seeded sessions: never sent
+    assert p.messages_out_of_scope == 200  # the seeded sessions: stored, never sent
 
 
 def test_context_for_a_plumber_errand_over_the_seeded_user(
@@ -250,7 +248,7 @@ def test_context_for_a_plumber_errand_over_the_seeded_user(
     )
 
     assert p.tokens["total"] <= 2500
-    assert p.messages_dropped > 0  # the long history doesn't all fit
+    assert p.messages == [] and p.messages_out_of_scope == 200  # old sessions: never sent
     assert "Earliest start: 10:00" in p.memories and "09:00" not in p.memories
     assert "Budget for plumber: up to ₹1500" in p.memories and "1200" not in p.memories
     assert "ring the bell twice" in p.memories
