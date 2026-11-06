@@ -584,6 +584,11 @@ User information comes in three kinds, kept in three places:
   quote appears in a user message, forgotten facts only as `[forgotten]`, PII only as
   `[phone saved]` etc.) and every value passes the store's validation. A test fails if
   the committed file differs from the generator's output.
+  **One consistent story** (BUG-2): each fact is said in the session nearest the day it
+  was learned, oldest first, so a correction always follows what it corrects. Bookings
+  have one source of truth, the mock world's history (`mocks/data/providers.json`): the
+  seeded usual-provider inferences are exactly what the inference rules derive from it
+  (a test runs the rules to check), and the canned small talk states no booking facts.
 
 ### Run outcomes: `workflow/outcomes.py`
 - **What:** `RunOutcome` (kind, user-facing message, optional booking / approval card),

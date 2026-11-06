@@ -6,6 +6,7 @@ import pytest
 from errand_agent.core.clock import FakeClock, utc_text
 from errand_agent.core.ids import SequentialIdGen
 from errand_agent.mocks.scenario import Scenario, SlotRef
+from errand_agent.mocks.seed import load_seed
 from errand_agent.mocks.world import MockWorld
 from errand_agent.providers.errors import ProviderUnavailable
 from errand_agent.providers.models import (
@@ -239,12 +240,14 @@ async def test_only_confirmed_future_bookings_can_be_rescheduled(world: MockWorl
 async def test_list_bookings_returns_history_ordered_by_slot(world: MockWorld) -> None:
     bookings = await world.list_bookings("user_1")
 
-    assert [b.booking_id for b in bookings] == [
-        AQUACARE_BOOKING,
-        SPARKS_BOOKING,
-        COOLBREEZE_BOOKING,
-    ]
-    assert [b.status for b in bookings] == ["cancelled", "completed", "confirmed"]
+    assert [b.slot for b in bookings] == sorted(b.slot for b in bookings)
+    assert {b.booking_id for b in bookings} == {h.booking_id for h in load_seed().history}
+    status = {b.booking_id: b.status for b in bookings}
+    assert (status[AQUACARE_BOOKING], status[SPARKS_BOOKING], status[COOLBREEZE_BOOKING]) == (
+        "cancelled",
+        "completed",
+        "confirmed",
+    )
     assert all(b.slot.utcoffset() == timedelta(hours=5, minutes=30) for b in bookings)
 
 
@@ -264,7 +267,7 @@ async def test_list_bookings_includes_new_bookings_but_not_ghosts(
 
     bookings = await world.list_bookings("user_1")
 
-    assert len(bookings) == 4
+    assert len(bookings) == len(load_seed().history) + 1  # the won booking, not the ghost
     assert all(b.user_id == "user_1" for b in bookings)
 
 

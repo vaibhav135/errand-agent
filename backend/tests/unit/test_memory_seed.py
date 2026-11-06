@@ -88,7 +88,6 @@ def where_said(seed: dict[str, Any]) -> dict[str, tuple[int, int, int]]:
     return found
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-2: facts are shuffled into sessions regardless of date")
 def test_facts_are_said_when_they_were_learned() -> None:
     seed = build_seed()
     said = where_said(seed)
@@ -102,7 +101,6 @@ def test_facts_are_said_when_they_were_learned() -> None:
             assert old < new, f"{fact['replaces']} is said after {fact['id']}"
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-2: inferences cite bookings the mock world lacks")
 def test_inferred_reasons_match_the_booking_history() -> None:
     history = load_seed().history
 
@@ -119,7 +117,6 @@ def test_inferred_reasons_match_the_booking_history() -> None:
         assert len(completed) == int(claimed.group(1)), fact["id"]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-2: canned replies state bookings that don't exist")
 def test_the_seeded_assistant_makes_no_booking_claims() -> None:
     claims = [
         m["content"]

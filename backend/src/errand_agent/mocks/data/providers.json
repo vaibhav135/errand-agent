@@ -354,7 +354,15 @@
   ],
   "history": [
     {"booking_id": "bk_hist_sparks", "provider_id": "ele_sparks", "days_from_today": -24, "hour_ist": 11, "status": "completed", "price_inr": 800},
+    {"booking_id": "bk_hist_sparks_2", "provider_id": "ele_sparks", "days_from_today": -72, "hour_ist": 12, "status": "completed", "price_inr": 800},
     {"booking_id": "bk_hist_coolbreeze", "provider_id": "ac_coolbreeze", "days_from_today": 5, "hour_ist": 10, "status": "confirmed", "price_inr": 1200},
-    {"booking_id": "bk_hist_aquacare", "provider_id": "plm_aquacare", "days_from_today": -60, "hour_ist": 9, "status": "cancelled", "price_inr": 1350}
+    {"booking_id": "bk_hist_coolbreeze_2", "provider_id": "ac_coolbreeze", "days_from_today": -31, "hour_ist": 10, "status": "completed", "price_inr": 1200},
+    {"booking_id": "bk_hist_coolbreeze_3", "provider_id": "ac_coolbreeze", "days_from_today": -118, "hour_ist": 11, "status": "completed", "price_inr": 1100},
+    {"booking_id": "bk_hist_freshnest", "provider_id": "cln_freshnest", "days_from_today": -19, "hour_ist": 10, "status": "completed", "price_inr": 1799},
+    {"booking_id": "bk_hist_freshnest_2", "provider_id": "cln_freshnest", "days_from_today": -47, "hour_ist": 11, "status": "completed", "price_inr": 1799},
+    {"booking_id": "bk_hist_freshnest_3", "provider_id": "cln_freshnest", "days_from_today": -86, "hour_ist": 9, "status": "completed", "price_inr": 1699},
+    {"booking_id": "bk_hist_aquacare", "provider_id": "plm_aquacare", "days_from_today": -60, "hour_ist": 9, "status": "cancelled", "price_inr": 1350},
+    {"booking_id": "bk_hist_aquacare_2", "provider_id": "plm_aquacare", "days_from_today": -93, "hour_ist": 9, "status": "completed", "price_inr": 1250},
+    {"booking_id": "bk_hist_aquacare_3", "provider_id": "plm_aquacare", "days_from_today": -121, "hour_ist": 10, "status": "completed", "price_inr": 1250}
   ]
 }

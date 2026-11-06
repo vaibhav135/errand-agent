@@ -17,6 +17,11 @@ How:  - Key facts are written by hand and cover every state the context builder 
       - The data follows our own rules: each explicit memory's quote appears in a seeded
         user message; forgotten facts appear only as "[forgotten]"; the profile intro
         reads "[phone saved]" etc., as if scrubbing had already run.
+      - One consistent story (BUG-2): each fact is said in the session nearest the day
+        it was learned, oldest first, so a correction always follows what it corrects.
+        Bookings have one source of truth, the mock world's history: inferred
+        preferences cite exactly the completed bookings it holds, and the canned
+        filler states no booking facts at all.
       - The profile is fictional: example.com is reserved for documentation.
 """
 
@@ -292,14 +297,16 @@ ACKS = [
     "Thanks, I've saved that.",
     "Understood, I'll keep that in mind.",
 ]
+# Small talk that states no facts about bookings: bookings have a source of truth (the
+# provider's records), and a transcript must never compete with it.
 FILLER: list[tuple[str, str]] = [
     (
-        "Any update on my booking?",
-        "Your booking is confirmed. I'll message you if anything changes.",
+        "Is it going to rain tomorrow?",
+        "I can't check the weather, sorry. I can help with home services.",
     ),
     (
-        "What did I book last time?",
-        "Your last booking was an electrician visit with Sparks Electricals.",
+        "Can you help with appliance repair?",
+        "Not yet: I can arrange plumbers, electricians, AC servicing, cleaning and carpenters.",
     ),
     ("Thanks, that's all for now.", "You're welcome. Message me any time."),
     ("Can you find a plumber this week?", "Sure. Which day works best for you?"),
@@ -312,13 +319,20 @@ FILLER: list[tuple[str, str]] = [
     ("Never mind, I'll do it later.", "No problem. I've left it for now."),
     ("Can someone fix a wardrobe hinge?", "Yes, carpenters can. Which area should I search?"),
     ("Do they bring their own tools?", "Usually yes. I can note it in the booking if needed."),
-    (
-        "Please check the cleaning booking for Saturday.",
-        "Saturday's cleaning is confirmed for 11:00.",
-    ),
-    ("Who is coming for the AC?", "CoolBreeze AC Care is scheduled for your AC servicing."),
+    ("Do I need to be home for the visit?", "Usually yes, or someone who can let them in."),
+    ("How early should I book?", "A few days ahead is safest; weekends fill up first."),
 ]
 NOTE_ACK = "Okay, noted."
+
+
+def session_days_ago(index: int) -> int:
+    """Past sessions are 10 days apart: the first was 100 days ago, the last 10."""
+    return 100 - index * 10
+
+
+def nearest_session(days_ago: int) -> int:
+    """The session closest to the day a fact was learned (the older one on a tie)."""
+    return min(range(SESSIONS), key=lambda i: (abs(session_days_ago(i) - days_ago), i))
 
 
 def build_seed() -> dict[str, Any]:
@@ -335,18 +349,18 @@ def build_seed() -> dict[str, Any]:
                 "status": "active",
                 "said": said,
                 "quote": quote,
-                "days_ago": rng.randint(2, 95),
+                "days_ago": rng.randint(5, 95),  # within 5 days of some session
             }
         )
 
-    # Every fact the user stated gets a turn in some session (its words, then an ack).
-    stated = [f for f in facts if "said" in f]
-    rng.shuffle(stated)
+    # Every fact the user stated gets a turn (its words, then an ack) in the session nearest
+    # the day it was learned, oldest first: a correction always comes after what it corrects.
+    stated = sorted((f for f in facts if "said" in f), key=lambda f: (-f["days_ago"], f["id"]))
     sessions: list[list[dict[str, str]]] = [[] for _ in range(SESSIONS)]
     sessions[0].append({"role": "user", "content": PROFILE_INTRO})
     sessions[0].append({"role": "assistant", "content": "Thanks, I've saved your details."})
-    for i, fact in enumerate(stated):
-        target = sessions[i % SESSIONS]
+    for fact in stated:
+        target = sessions[nearest_session(fact["days_ago"])]
         target.append({"role": "user", "content": fact["said"]})
         ack = NOTE_ACK if fact["key"] == "note" and fact["status"] != "active" else rng.choice(ACKS)
         target.append({"role": "assistant", "content": ack})
@@ -366,7 +380,11 @@ def build_seed() -> dict[str, Any]:
         "profile": PROFILE,
         "memories": memories,
         "sessions": [
-            {"session_id": f"sess_hist_{i + 1:02d}", "days_ago": 100 - i * 10, "messages": msgs}
+            {
+                "session_id": f"sess_hist_{i + 1:02d}",
+                "days_ago": session_days_ago(i),
+                "messages": msgs,
+            }
             for i, msgs in enumerate(sessions)
         ],
     }
