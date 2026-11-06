@@ -87,12 +87,12 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Notify → replacement search within preferences → fresh approval → rebook
 
 ## Phase 8 — Evals
-- [ ] Live smoke test (`make smoke`, skipped without a key, not part of `make test`): a real
+- [x] Live smoke test (`make smoke`, skipped without a key, not part of `make test`): a real
       conversation reaches an approval card and nothing is booked without "yes"
-- [ ] Scripted-model harness (`FunctionModel`) + simulated users
-- [ ] ≥20 scenarios asserting outcomes and invariants
-- [ ] Generated eval table (`evals/results.md`)
-- [ ] Large mock world for scale tests (`make seed-large`, `ERRAND_MOCK_WORLD=large`): deterministic
+- [x] Scripted-model harness (`FunctionModel`) + simulated users
+- [x] ≥20 scenarios asserting outcomes and invariants (25, plus six global invariants)
+- [x] Generated eval table (`evals/results.md`)
+- [ ] *Deferred (D7):* Large mock world for scale tests (`make seed-large`, `ERRAND_MOCK_WORLD=large`): deterministic
       generator (Faker `en_IN` + templates, fixed seed), long booking histories, hundreds of
       reviews per provider from a curated, committed snippet library; attack fixtures kept.
       The hand-written 30-provider world stays the default for evals and the demo.
