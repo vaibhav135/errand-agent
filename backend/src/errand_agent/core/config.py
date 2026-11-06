@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     model: str | None = None
     mock_seed: int = 42
 
+    # Hard per-run limits (one run = one inbound event handled end to end).
+    max_model_turns: int = Field(default=8, ge=1)
+    max_tool_calls: int = Field(default=20, ge=1)
+    max_run_seconds: float = Field(default=60.0, gt=0)
+
+    # Background reconciler cadence; 0 disables the loop (the startup pass still runs).
+    reconcile_interval_seconds: float = Field(default=30.0, ge=0)
+
     # validation_alias = the standard, unprefixed env var name.
     anthropic_api_key: SecretStr | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
     openai_api_key: SecretStr | None = Field(default=None, validation_alias="OPENAI_API_KEY")
@@ -68,3 +76,10 @@ class Settings(BaseSettings):
             for field, name in _DERIVED.items():
                 data.setdefault(field, root / name)
         return data
+
+
+def load_settings() -> Settings:
+    """Settings from the environment / .env (what the running app uses)."""
+    # The derived paths are filled by `_derive_paths` before validation, which a
+    # static type checker can't see, so the no-argument call looks incomplete to it.
+    return Settings()  # pyright: ignore[reportCallIssue]

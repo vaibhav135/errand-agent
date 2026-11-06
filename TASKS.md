@@ -27,12 +27,19 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] `MockControl.cancel_by_provider` (simulated provider event for Phase 6)
 
 ## Phase 3 — Workflow core
-- [ ] First `agent.db` migration; create + migrate `agent.db` at app startup
-- [ ] State model + explicit transitions
-- [ ] Approval gate: approval bound to hash(action, provider, slot, price); invalidated on change
-- [ ] Booking executor: persisted idempotency key, timeout → `get_booking_status`, no duplicate bookings
-- [ ] Cancel / reschedule with bounded retries
-- [ ] Hard limits: model turns, tool calls, wall-clock; every exit has a user-facing outcome
+- [x] First `agent.db` migration; create + migrate `agent.db` at app startup
+- [x] Requirements model: missing / ask-once fields, correction merge, date checks
+- [x] State model + explicit transitions (tables per kind, history, generated diagrams)
+- [x] Filtering + deterministic ranking of search results
+- [x] Approval gate: approval bound to hash(action, provider, slot, price); invalidated on change
+- [x] `GuardedToolEnv`: traced provider calls + per-run limits
+- [x] `propose_booking`: hold + approval + transition in one atomic unit; shows a changed quote
+- [x] Booking executor: persisted idempotency key, timeout → `get_booking_status`, no duplicate bookings
+- [x] Reconciler: startup pass + 30 s background loop; resolves `unverified` / crashed bookings
+      (completes the approved action with the same hold + key); retries `cancel_pending` until
+      min(15 min after approval, 1 h before the visit), then `cancel_failed`
+- [x] Cancel / reschedule with bounded retries
+- [x] Hard limits: model turns, tool calls, wall-clock; every exit has a user-facing outcome
 
 ## Phase 4 — Memory & context
 - [ ] `memories` table: explicit vs inferred, active / pending_confirm / forgotten
@@ -41,6 +48,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [ ] Seed ≥50 memories + long prior conversation
 
 ## Phase 5 — Agent
+- [ ] Per-run reconcile check (`reconcile_once(session_id=...)`) at the start of each user run
 - [ ] PydanticAI orchestrator + tool wrappers (model configurable via env)
 - [ ] Quarantined review-reader sub-agent (no tools; typed summary only)
 - [ ] Chat-history persistence (`ModelMessagesTypeAdapter`)

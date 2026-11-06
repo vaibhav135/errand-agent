@@ -53,7 +53,9 @@ computed string, which would be deliberate evasion.
   treats it as valid.
 - **How:** Nothing calls `datetime.now()` or `time.sleep()` directly; a clock is
   injected. All datetimes are UTC-aware. `FakeClock.advance()` moves `now()` and
-  `monotonic()` together; `sleep()` advances instantly.
+  `monotonic()` together; `sleep()` advances instantly. `utc_text()` is the single way
+  any datetime is written to SQLite (UTC, whole seconds), because SQLite compares
+  stored datetimes as text and mixed offsets or precision would sort wrongly.
 
 ```
 app:   clock = SystemClock()                    ─┬─▶ MockWorld(clock)
@@ -77,6 +79,8 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 | `ERRAND_AGENT_DB_PATH` / `ERRAND_MOCK_DB_PATH` / `ERRAND_TRACE_DIR` | under `data_dir` |
 | `ERRAND_MODEL` | unset (e.g. `anthropic:claude-sonnet-5-5`) |
 | `ERRAND_MOCK_SEED` | `42` |
+| `ERRAND_MAX_MODEL_TURNS` / `ERRAND_MAX_TOOL_CALLS` / `ERRAND_MAX_RUN_SECONDS` | `8` / `20` / `60` (per-run hard limits) |
+| `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | unset; standard names, no prefix |
 
 Local values go in `backend/.env` (gitignored), copied from the committed
@@ -100,7 +104,29 @@ reading the environment would silently miss keys that live in `.env`.
 - **How:** `autocommit=True` (no implicit transactions), WAL, `foreign_keys=ON`,
   `busy_timeout=5000`, `synchronous=NORMAL` (survives process crashes).
   `transaction()` uses `BEGIN IMMEDIATE` so the write lock is taken at BEGIN, and rolls
-  back only if SQLite hasn't already ([BUG-1](../BUGS.md)).
+  back only if SQLite hasn't already ([BUG-1](../BUGS.md)). `atomic()` joins the
+  caller's transaction or opens one, so store methods compose into larger units of work
+  (e.g. hold + approval + state change). `after_commit()` defers side effects such as
+  trace events until the outermost transaction commits and drops them on rollback:
+  traces never report a change that didn't happen.
+
+**Thread rule:** SQLite connections are bound to the thread that created them
+(`check_same_thread`, kept on deliberately). All database work happens on the event-loop
+thread: route handlers that touch services must be `async def` (FastAPI runs sync
+handlers in a thread pool). Turning the guard off would let two threads interleave
+transactions on one connection; with it on, a mistake fails loudly. Tests that use
+services directly run the app lifespan in their own loop (`app.router.lifespan_context`).
+
+### App wiring: `api/app.py`
+- **What:** `create_app(settings, clock=, ids=)`; its lifespan builds `Services`
+  (settings, clock, ids, `agent.db` connection, mock world, tracer) on
+  `app.state.services` and closes them on shutdown.
+- **Why:** the one place where concrete implementations are chosen; every other layer
+  receives a `Clock`, `ToolEnv`, `Tracer` instead of building one, so tests inject a
+  `FakeClock` and temp paths.
+- **How:** startup migrates `agent.db` and opens the mock world (migrated and seeded
+  once); restarts reuse the same files. The dev server uses env/`.env` settings, the
+  system clock and random ids.
 
 ### Migrations: `store/migrate.py`
 - **What:** `migrate(conn, directory, clock)` applies `NNNN_name.sql` files in order.
@@ -253,6 +279,265 @@ because keyword filters fail on encoded and split payloads.
 | `split_payload` | SafeCircuit, 2 reviews | goal hijack / split | no `book` without approval |
 
 Labels live in the DB for evals only and are never returned through `ToolEnv`.
+
+### Requirements: `workflow/requirements.py`
+- **What:** `Requirements` (service, area, date range, time window, budget, preferred
+  provider), `RequirementsPatch`, and `missing_required` / `unasked_optional` / `merge`
+  / `date_problems`.
+- **Why:** "Collect only missing details; don't re-ask; keep unrelated context on a
+  correction." What to ask is decided by code, not by the model.
+- **How:**
+
+| Field | Kind |
+|---|---|
+| `service`, `area`, `date_range` | required to search |
+| `time_window`, `budget_max_inr` | optional, asked at most once (with any missing required field); `"any"` = no preference, which stops re-asking |
+| `preferred_provider_id` | never asked; from the user or memory |
+
+  A correction is a patch: only fields it explicitly sets change, so "make it HSR
+  Layout" keeps the budget. Changing the service clears the preferred provider. Unknown
+  fields are rejected (they come from model tool calls). Dates are checked against the
+  clock's today and the contract's `MAX_DATE_RANGE_DAYS` (14), with messages the model
+  can act on.
+
+### Guarded tool calls and limits: `workflow/guarded_env.py`
+- **What:** `GuardedToolEnv` wraps any `ToolEnv`; `BudgetMeter` enforces a `RunBudget`
+  (model turns, tool calls, wall-clock seconds per run); `LimitExceeded`.
+- **Why:** hard limits and per-call tracing in one place, so no provider call can skip
+  either.
+- **How:** each call charges the meter, then runs inside a `tool_call` trace span
+  (args, sanitized result, status, latency). Limits are checked **before** a call
+  starts; an in-flight call is never cut off, since interrupting a side effect would
+  create the very "did it happen?" ambiguity we avoid (the provider's own timeout
+  bounds it). `get_booking_status` is **budget-exempt** (counted and traced, never
+  blocked): after a side effect, finding out what happened must always be possible;
+  the executor caps it itself. A limit hit emits `limit_hit` and raises
+  `LimitExceeded`, which ends the *run* with a clear outcome, never the errand.
+
+### Ranking: `workflow/ranking.py`
+- **What:** `rank_options(providers, requirements)` → the top 3 options, each with up to
+  3 matching slots and reasons computed in code, plus a `preferred_note` when the
+  preferred provider doesn't fit.
+- **Why:** what the user compares is decided deterministically from structured contract
+  fields. Review text is untrusted and never influences the order, which is the
+  defence against the `ranking_manipulation` fixture (a test ranks the real world with
+  and without that review and requires identical results).
+- **How:** filter by budget (inclusive) and time window (inclusive, in IST), drop
+  providers with no matching slot; order by preferred provider, then Bayesian-adjusted
+  rating `(r·n + 4.3·20)/(n + 20)` (so 5.0★ from 3 reviews doesn't beat 4.7★ from
+  300), price, earliest slot, id. The model only phrases the reasons.
+
+### Approval gate: `workflow/approvals.py`
+- **What:** `ApprovalDetails`, `fingerprint()`, `ApprovalStore` (request / grant /
+  reject / invalidate / consume), `is_explicit_yes()`.
+- **Why:** booking, cancelling and rescheduling need explicit confirmation of the exact
+  action and material details, enforced in code; any change to provider, slot or price
+  invalidates it.
+- **How:** the fingerprint is sha256 over canonical JSON of (action, provider, slot as
+  UTC text, price, booking). It works like a photocopy of the signed agreement: before
+  acting, compare.
+
+| Step | Rule |
+|---|---|
+| `request` | creates `pending`; supersedes the errand's live approval (DB: one live per errand) |
+| `grant` | `pending` only, and only with the fingerprint the user was shown |
+| `consume` | inside the executor's transaction with the idempotency key; `granted` only; current details must still match; single use (repeated confirmations can't run twice). Writes nothing when refusing; the caller invalidates as a separate step |
+| typed "yes" | whole message must be an explicit affirmative; resolves only when exactly one approval is pending. The model never decides whether the user agreed |
+
+  **Hash, not signature (deliberate):** sha256 has no key, so the fingerprint detects
+  differences but isn't tamper-proof. The trust boundary is that only the workflow
+  creates approvals; users can only grant or reject one. An HMAC (keyed hash) would be
+  the right addition if approvals ever travelled outside the system, e.g. as
+  "click to approve" links in email or SMS.
+
+### Booking flow: `workflow/booking.py`
+- **What:** `BookingFlow.propose(errand, option, slot)` and
+  `BookingFlow.execute(errand, approval)`; provider side effects are recorded in
+  `provider_actions` ([actions.py](../backend/src/errand_agent/workflow/actions.py)).
+- **Why:** the model never books; it can only propose. Only the user's approval can lead
+  to a booking, and a booking is made exactly once and never claimed until verified.
+- **How (propose):** preconditions are checked before calling the provider, so a
+  wrong-state call places no hold. The hold is placed, then the errand's hold, the
+  approval request and `option_proposed` are saved in one `atomic` unit (if those writes
+  failed, the provider hold simply expires). The approval carries the **quoted** price;
+  `price_changed_from` tells the user when it differs from the search price.
+- **How (execute):**
+
+```
+1. hold freshness   expires within 30 s → re-hold
+                      same price → continue (fingerprint excludes hold_id)
+                      new price  → fresh approval            → needs_reapproval
+                      slot gone  → back to comparing         → slot_gone
+2. COMMIT POINT     one atomic unit: consume approval (details must still match)
+                    + provider_action{new idempotency key, in_flight} + approved → booking
+                    budget checked just before; after it, calls are exempt (finish what started)
+3. book(hold, key)  ≤ 3 attempts, always the same key
+                      Booked        → booked
+                      slot_taken    → comparing
+                      hold_expired  → re-hold, fresh approval → needs_reapproval
+                      timeout       → verifying: get_booking_status(key) ≤ 3 checks
+                                        (backoff 1 s, 2 s between failed checks)
+                                        booked     → booked (never re-book)
+                                        not booked → retry same key, else not_booked → comparing
+                                        unreachable→ unverified (parked for the reconciler)
+```
+
+  `provider_actions` is written at the commit point, before the provider is called, so
+  after a crash the reconciler knows exactly which keys may have taken effect. Any other
+  provider error during `book` (e.g. a 503 the contract doesn't produce for `book`)
+  leaves the action `in_flight`, which the reconciler resolves through
+  `get_booking_status(key)`, never by booking again.
+
+### Change flow (cancel / reschedule): `workflow/changes.py`
+- **What:** `ChangeFlow.propose_cancel / propose_reschedule` and `execute_cancel /
+  execute_reschedule`, sharing the commit point with booking
+  ([flow.py](../backend/src/errand_agent/workflow/flow.py)).
+- **Why:** cancelling and rescheduling are consequential too: exact approval enforced in
+  code, idempotent execution, honest outcomes when the provider is unreachable.
+- **How:** booking details always come from the provider's record (`list_bookings`),
+  when proposing and again before executing; if the booking changed in between, the
+  fingerprint no longer matches, the approval is invalidated and the user is asked again
+  (`booking_changed`).
+
+| | Behaviour |
+|---|---|
+| cancel | a 503 is retried 3× with the same key (backoff 1, 2, 4 s). Still failing → `cancel_pending`: the booking is **still active**; the reconciler retries until `min(approval + 15 min, visit − 1 h)`. Already past that → `cancel_failed` at once ("contact the provider"). Provider refusal → `cancel_failed`. Already cancelled counts as cancelled |
+| reschedule | same price; one call (no transient failures in the contract). `slot_conflict` → back to `collecting`; no longer reschedulable → `reschedule_failed` |
+
+### Reconciler: `workflow/reconciler.py`
+- **What:** `Reconciler.reconcile_once(session_id=None)` settles every open provider
+  action (`in_flight` / `verifying` / `unverified`); `run_periodically()` repeats it.
+- **Why:** restarts and unreachable providers must never leave an outcome guessed: a
+  crash right after the commit point, a timeout whose status checks all failed, a cancel
+  that kept getting 503s.
+- **When:** at app startup (restart recovery), every `ERRAND_RECONCILE_INTERVAL_SECONDS`
+  (30) in the background, and per session at the start of a user run (wired by the
+  agent loop). A pass with work gets its own `trigger="reconcile"` run trace; an empty
+  pass leaves none.
+- **How:**
+
+| Operation | Settled by |
+|---|---|
+| book | `get_booking_status(key)`: booked → confirm, never book again. Not booked → complete the **approved** action once: `book(same hold, same key)` (the provider refuses if the hold expired, so nothing new can happen). Unreachable → stays parked |
+| cancel | `cancel_pending` retried with the same key once due (backoff 30 s, 1, 2, 4, then 5 min); after `min(approval + 15 min, visit − 1 h)` it ends in `cancel_failed` without another call |
+| reschedule | re-sent with the same key (the provider replays or performs it) |
+
+  The reconciler never creates a *new* hold, key or price. Calls go through
+  `GuardedToolEnv` inside `committed()`: traced, never blocked, because this is
+  finishing started work.
+
+### Run outcomes: `workflow/outcomes.py`
+- **What:** `RunOutcome` (kind, user-facing message, optional booking / approval card),
+  mappers `for_execution` / `for_change` / `for_limit` / `for_error`, and
+  `run_with_outcome()`, the wrapper every run goes through.
+- **Why:** "every exit path must produce a clear user-facing outcome" and "never claim
+  success until verified". The facts in each message (booked or not, provider, IST slot,
+  price) are written by code from verified results; the model may rephrase but can't
+  turn `unverified` into "Booked!".
+- **How:** `run_with_outcome()` opens the run trace, builds the budget meter and guarded
+  tool env, runs the body and converts **any** exit into a `RunOutcome`: the body's
+  result, `LimitExceeded` ("nothing was booked or changed by the step I stopped at; say
+  continue"), or an unexpected exception (logged; if the errand was mid side effect, the
+  message says we're checking with the provider instead of "nothing happened"). It
+  always finishes the trace with that outcome, so no run ends `unspecified`.
+
+### Errand state machine: `workflow/errands.py`
+- **What:** one transition table per errand kind (`book`, `reschedule`, `cancel`),
+  `next_state()`, and `ErrandStore` (errands, their requirements and an append-only
+  `errand_transitions` history in `agent.db`).
+- **Why:** "Represent the workflow explicitly." Every legal move is data; anything else
+  raises `InvalidTransition`, so a bug such as booking straight from `comparing` fails
+  loudly.
+- **How:** a transition updates the state and appends history in one transaction, then
+  emits a `state_transition` trace event (after commit, so traces only show what really
+  happened). Requirements can only change while the errand is abandonable.
+
+| Group | States | Meaning |
+|---|---|---|
+| Terminal | `booked`, `rescheduled`, `reschedule_failed`, `cancelled`, `cancel_failed`, `abandoned` | no exits |
+| In flight | `booking`, `verifying`, `rescheduling`, `cancelling` | a provider side effect is running |
+| Parked | `unverified`, `cancel_pending` | outcome pending reconciliation |
+| Abandonable | `collecting`, `comparing`, `awaiting_approval` | the only states the user can drop |
+
+`unverified` (after a `book` timeout) is truly ambiguous: only `get_booking_status`
+can resolve it. `cancel_pending` is not: a 503 means the provider did nothing, so the
+booking is **still active** and the user is told so. The reconciler (background loop,
+startup pass and a per-run check) retries it until the earlier of 15 minutes after
+approval or 1 hour before the visit, then ends in `cancel_failed`. Hard limits end a
+*run*, never an errand: the errand stays where it was, ready to resume.
+
+The diagrams below are generated by `render_mermaid(kind)`; a test fails if they drift
+from the table.
+
+**book**
+
+```mermaid
+stateDiagram-v2
+    [*] --> collecting
+    collecting --> comparing: options_ready
+    comparing --> awaiting_approval: option_proposed
+    comparing --> collecting: requirements_changed
+    awaiting_approval --> collecting: requirements_changed
+    awaiting_approval --> awaiting_approval: approval_renewed
+    awaiting_approval --> comparing: approval_rejected
+    awaiting_approval --> comparing: option_unavailable
+    awaiting_approval --> booking: approved
+    booking --> booked: booked
+    booking --> comparing: slot_taken
+    booking --> awaiting_approval: needs_reapproval
+    booking --> verifying: timeout
+    verifying --> booked: confirmed
+    verifying --> booking: retry
+    verifying --> unverified: unverifiable
+    verifying --> comparing: not_booked
+    unverified --> booked: confirmed
+    unverified --> comparing: not_booked
+    collecting --> abandoned: abandon
+    comparing --> abandoned: abandon
+    awaiting_approval --> abandoned: abandon
+    booked --> [*]
+    abandoned --> [*]
+```
+
+**reschedule**
+
+```mermaid
+stateDiagram-v2
+    [*] --> collecting
+    collecting --> awaiting_approval: option_proposed
+    awaiting_approval --> collecting: requirements_changed
+    awaiting_approval --> collecting: approval_rejected
+    awaiting_approval --> rescheduling: approved
+    rescheduling --> rescheduled: rescheduled
+    rescheduling --> collecting: slot_conflict
+    rescheduling --> reschedule_failed: not_reschedulable
+    collecting --> abandoned: abandon
+    awaiting_approval --> abandoned: abandon
+    rescheduled --> [*]
+    reschedule_failed --> [*]
+    abandoned --> [*]
+```
+
+**cancel**
+
+```mermaid
+stateDiagram-v2
+    [*] --> collecting
+    collecting --> awaiting_approval: option_proposed
+    awaiting_approval --> collecting: approval_rejected
+    awaiting_approval --> cancelling: approved
+    cancelling --> cancelled: cancelled
+    cancelling --> cancel_failed: not_cancellable
+    cancelling --> cancel_pending: retries_exhausted
+    cancel_pending --> cancelled: cancelled
+    cancel_pending --> cancel_failed: not_cancellable
+    cancel_pending --> cancel_failed: window_closed
+    collecting --> abandoned: abandon
+    awaiting_approval --> abandoned: abandon
+    cancelled --> [*]
+    cancel_failed --> [*]
+    abandoned --> [*]
+```
 
 ## Run lifecycle
 

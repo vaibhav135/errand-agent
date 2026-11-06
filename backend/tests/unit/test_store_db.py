@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from errand_agent.store.db import connect, transaction
+from errand_agent.store.db import after_commit, atomic, connect, transaction
 
 
 @pytest.fixture
@@ -90,3 +90,66 @@ def test_transaction_takes_write_lock_at_begin(db_path: Path) -> None:
         transaction(b),
     ):
         pass
+
+
+# --- atomic / after_commit ----------------------------------------------------------------
+
+
+def test_atomic_opens_a_transaction_when_none_is_running(db_path: Path) -> None:
+    conn = connect(db_path)
+    conn.execute("CREATE TABLE t (x INTEGER)")
+
+    with atomic(conn):
+        assert conn.in_transaction
+        conn.execute("INSERT INTO t VALUES (1)")
+
+    assert not conn.in_transaction
+    assert conn.execute("SELECT count(*) FROM t").fetchone()[0] == 1
+
+
+def test_atomic_joins_the_callers_transaction(db_path: Path) -> None:
+    conn = connect(db_path)
+    conn.execute("CREATE TABLE t (x INTEGER)")
+
+    with pytest.raises(RuntimeError), transaction(conn):
+        with atomic(conn):  # joins: its write belongs to the outer transaction
+            conn.execute("INSERT INTO t VALUES (1)")
+        raise RuntimeError("outer fails")
+
+    assert conn.execute("SELECT count(*) FROM t").fetchone()[0] == 0
+
+
+def test_after_commit_runs_only_once_the_outermost_transaction_commits(db_path: Path) -> None:
+    conn = connect(db_path)
+    ran: list[str] = []
+
+    with transaction(conn):
+        with atomic(conn):
+            after_commit(conn, lambda: ran.append("inner"))
+        after_commit(conn, lambda: ran.append("outer"))
+        assert ran == []  # not yet: still inside the transaction
+
+    assert ran == ["inner", "outer"]
+
+
+def test_after_commit_is_dropped_on_rollback(db_path: Path) -> None:
+    conn = connect(db_path)
+    ran: list[str] = []
+
+    with pytest.raises(RuntimeError), transaction(conn):
+        after_commit(conn, lambda: ran.append("should not run"))
+        raise RuntimeError("rolled back")
+
+    assert ran == []
+    with transaction(conn):  # and a later transaction starts clean
+        pass
+    assert ran == []
+
+
+def test_after_commit_outside_a_transaction_runs_immediately(db_path: Path) -> None:
+    conn = connect(db_path)
+    ran: list[str] = []
+
+    after_commit(conn, lambda: ran.append("now"))
+
+    assert ran == ["now"]

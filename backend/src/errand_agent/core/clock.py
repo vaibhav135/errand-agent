@@ -12,12 +12,18 @@ How:  Nothing calls `datetime.now()` / `time.sleep()` directly; a `Clock` is
       injected wherever time is read. All datetimes are UTC-aware.
       `FakeClock.advance()` moves `now()` and `monotonic()` together, and
       `FakeClock.sleep()` advances time instantly instead of waiting.
+      `utc_text()` is the single way a datetime is written to SQLite: UTC,
+      whole seconds, ISO-8601, because SQLite compares these as text.
+      `IST` is the users' local time zone (Bengaluru): slots and time windows
+      ("mornings only") are expressed in it; storage stays UTC.
 """
 
 import asyncio
 import time
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime, timedelta, timezone
 from typing import Protocol, runtime_checkable
+
+IST = timezone(timedelta(hours=5, minutes=30), name="IST")
 
 
 @runtime_checkable
@@ -68,3 +74,12 @@ class FakeClock:
         # Still yield once so other tasks get scheduled, as a real sleep would;
         # otherwise a retry loop could starve the rest of the event loop in tests.
         await asyncio.sleep(0)
+
+
+def utc_text(dt: datetime) -> str:
+    """The one way a datetime is stored in SQLite: UTC, whole seconds, ISO-8601.
+
+    SQLite compares these as text, so every stored value must share one offset and
+    one precision (a SystemClock "now" carries microseconds; slots don't).
+    """
+    return dt.astimezone(UTC).isoformat(timespec="seconds")

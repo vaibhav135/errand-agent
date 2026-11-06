@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from errand_agent.core.clock import FakeClock
+from errand_agent.core.clock import IST, FakeClock
 from errand_agent.mocks.scenario import (
     BookWeights,
     Scenario,
@@ -15,7 +15,6 @@ from errand_agent.mocks.scenario import (
     quoted_price,
     random_book_outcome,
 )
-from errand_agent.mocks.schedule import IST
 from errand_agent.store.db import connect, transaction
 from errand_agent.store.migrate import migrate, migrations_for
 

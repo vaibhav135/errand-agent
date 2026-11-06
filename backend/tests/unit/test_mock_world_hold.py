@@ -3,10 +3,10 @@ from pathlib import Path
 
 import pytest
 
-from errand_agent.core.clock import FakeClock
+from errand_agent.core.clock import FakeClock, utc_text
 from errand_agent.core.ids import SequentialIdGen
 from errand_agent.mocks.scenario import Scenario
-from errand_agent.mocks.world import MockWorld, utc_text
+from errand_agent.mocks.world import MockWorld
 from errand_agent.providers.models import DateRange, Held, HoldFailed, SearchOk
 from errand_agent.store.db import connect
 
