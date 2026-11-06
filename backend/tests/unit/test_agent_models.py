@@ -19,11 +19,21 @@ def test_default_models_need_only_the_anthropic_key() -> None:
     assert review_model(s).model_name == "claude-haiku-5-5"
 
 
-def test_no_effort_or_prompt_caching_unless_configured() -> None:
-    m = main_model(settings(ANTHROPIC_API_KEY="sk-ant-test"))
+def test_defaults_are_low_effort_and_prompt_caching() -> None:
+    # D5: measured on live turns, low effort halved errand turns and caching cut cost
+    # by 55-83% with no loss in what the agent did.
+    configured = dict(main_model(settings(ANTHROPIC_API_KEY="sk-ant-test")).settings or {})
 
-    configured = dict(m.settings or {})
-    assert "anthropic_effort" not in configured  # the API's own default applies
+    assert configured["anthropic_effort"] == "low"
+    assert configured["anthropic_cache_tool_definitions"] is True
+    assert configured["anthropic_cache_instructions"] is True
+
+
+def test_both_can_be_turned_back() -> None:
+    s = settings(ANTHROPIC_API_KEY="sk-ant-test", effort=None, prompt_cache=False)
+
+    configured = dict(main_model(s).settings or {})
+    assert "anthropic_effort" not in configured  # the API's own default (high) applies
     assert not configured.get("anthropic_cache_tool_definitions")
     assert not configured.get("anthropic_cache_instructions")
 

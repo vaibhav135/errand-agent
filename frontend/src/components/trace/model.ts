@@ -46,8 +46,12 @@ export function summarize(e: TraceEvent): string {
       return `trigger: ${f.trigger}`
     case 'run_finished':
       return `outcome: ${f.outcome}`
-    case 'model_call':
-      return `${f.agent} · ${f.estimated_input_tokens == null ? '–' : n(f.estimated_input_tokens)} est / ${n(f.input_tokens)} real · ${seconds(f.latency_ms)}`
+    case 'model_call': {
+      const estimate = f.estimated_input_tokens == null ? '–' : n(f.estimated_input_tokens)
+      // How much of the input came from the prompt cache (D5), when any did.
+      const cached = Number(f.cache_read_tokens ?? 0) > 0 ? `${n(f.cache_read_tokens)} cached · ` : ''
+      return `${f.agent} · ${estimate} est / ${n(f.input_tokens)} real · ${cached}${seconds(f.latency_ms)}`
+    }
     case 'agent_tool':
     case 'tool_call':
       return [f.tool, f.status === 'ok' ? null : f.status, `${f.latency_ms} ms`]

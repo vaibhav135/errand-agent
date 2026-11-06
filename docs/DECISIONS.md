@@ -261,3 +261,61 @@ partial text followed by the honest code-written limit message.
 the mock world through its control plane (timeout after success, slot taken, provider
 cancels, price change at hold), so the assignment's "failure handled live" can be shown
 in one recording without restarts.
+
+## D5. Reply latency: low effort, prompt caching, and a visible wait (2026-11-06)
+
+**Status:** accepted.
+
+**Problem.** In the web chat a "hello" took 3.5–8.6 s before anything appeared, then the
+whole reply at once (BUGS.md, BUG-10 and the latency row). The trace showed one Sonnet 5.5
+call with ~3.4K tokens in and ~50 out, so the time was inside the model call. Streaming
+worked end to end (the browser received separate `text` events); a ~50-token reply is
+generated in about half a second, so its chunks land in one burst.
+
+**What we learned.** Sonnet 5.5 thinks adaptively by default at `high` effort, and
+thinking can't be switched off (`disabled` is a 400; the lowest settings are
+`between_tools`, or adaptive at `low` effort, which the Anthropic docs recommend trying
+first for latency). Thinking text is hidden but billed as output tokens: the same
+~50-token "hello" reply came with 53–105 output tokens. Nothing was prompt-cached, so the
+same ~3.6K tokens of tools and instructions were processed fresh on every model call,
+and an errand turn makes several.
+
+**Measured** with `make latency` (real handler, prompt, tools and seeded memories; three
+"hello" turns, then a plumber search and a booking request in one session), one pass
+per setting, 2026-11-06:
+
+| Setting | hello: first word / cost | Search: first word, calls / cost | Booking: total, calls / cost | Pass cost |
+|---|---|---|---|---|
+| default (`high`), no cache | 0.9–1.15 s / $0.0073–0.0078 | 13.4 s, 6 / $0.044 | 10.1 s, 4 / $0.035 | $0.10 |
+| `low` effort | 0.96–1.32 s / $0.0075–0.0078 | 6.1 s, 3 / $0.028 | 7.1 s, 3 / $0.029 | $0.08 |
+| `low` effort + cache | 0.98–1.31 s / $0.0013–0.0014 | 6.7 s, 3 / $0.0096 | 6.2 s, 3 / $0.013 | $0.035 |
+
+- **Low effort is the latency win:** errand turns about halved, mostly through fewer
+  model calls (less thinking between tools: search output 1,780 -> 528 tokens).
+- **Caching is the cost win:** ~98% of a repeat call's input came from the cache
+  (3,305 of 3,383 tokens); cost per turn fell 55–83%. At our prompt size it made no
+  measurable latency difference: 3.4K tokens of input are processed quickly anyway.
+- **Same behaviour:** the search updated the requirements and searched; the booking
+  request ended at the approval card ("It isn't booked until you approve it").
+- "hello" stayed at ~1 s to the first word in every setting. The 3.5–8.6 s seen in the
+  browser were the same call on a slower moment of the API, which we don't control.
+
+**Decision.** `ERRAND_EFFORT=low` and `ERRAND_PROMPT_CACHE=true` by default, on every
+Anthropic request (orchestrator and review reader). Caching marks two breakpoints, after
+the tool definitions (identical every turn) and after the instructions; the API reuses
+the longest cached prefix it finds. Trace `model_call` events now record cache reads and
+writes, and cost prices them at their own rates (reads 0.1x input, 5-minute writes
+1.25x), so the trace's cost stays honest. The UI shows the wait (BUG-10): typing dots
+until the first word, a caret while the reply streams, and a steady reveal of bursty
+chunks.
+
+**Limits of the evidence.** One pass per setting, on one day: enough to see a halving
+and an 80% cost drop, not a precise p95. A cache-only pass was skipped to save cost (its
+cost effect is visible in the third row; at this prompt size it shouldn't move latency).
+`low` effort could matter on harder turns than these two; the live smoke run planned for
+Phase 8 exercises the real model on more flows, and either setting can be turned back
+(`ERRAND_EFFORT=high`, `ERRAND_PROMPT_CACHE=false`).
+**Rejected:** `between_tools` (the lowest thinking setting): `low` already removed most
+thinking and keeps per-turn effort adjustable; a smaller model for the orchestrator
+(Haiku): untested on multi-step tool use here, and the latency came from thinking and
+call count, not model speed.

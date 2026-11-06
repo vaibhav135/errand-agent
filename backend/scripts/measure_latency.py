@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 from typing import Any
 
+from errand_agent.agent.handler import MessageHandler
 from errand_agent.api.app import build_handler, build_services
 from errand_agent.core.clock import SystemClock
 from errand_agent.core.config import Settings
@@ -38,13 +39,15 @@ SEARCH = "Find me a plumber in HSR Layout for tomorrow morning"
 BOOK = "Book the cheapest one for tomorrow at 11"
 
 
-def model_calls(trace_dir: Path, run_id: str) -> list[dict[str, Any]]:
+def run_events(trace_dir: Path, run_id: str, kind: str) -> list[dict[str, Any]]:
     path = trace_dir / f"{run_id}.jsonl"
     events = [json.loads(line) for line in path.read_text().splitlines()]
-    return [e for e in events if e["type"] == "model_call"]
+    return [e for e in events if e["type"] == kind]
 
 
-async def turn(handler: Any, trace_dir: Path, session_id: str, text: str) -> dict[str, Any]:
+async def turn(
+    handler: MessageHandler, trace_dir: Path, session_id: str, text: str
+) -> dict[str, Any]:
     first: list[float] = []
 
     async def on_text(_chunk: str) -> None:
@@ -56,7 +59,8 @@ async def turn(handler: Any, trace_dir: Path, session_id: str, text: str) -> dic
         session_id=session_id, user_id=DEMO_USER_ID, text=text, on_text=on_text
     )
     total = time.perf_counter() - started
-    calls = model_calls(trace_dir, reply.run_id)
+    calls = run_events(trace_dir, reply.run_id, "model_call")
+    tools = [e["tool"] for e in run_events(trace_dir, reply.run_id, "agent_tool")]
     return {
         "prompt": text,
         "first_word_s": round(first[0] - started, 2) if first else None,
@@ -67,8 +71,9 @@ async def turn(handler: Any, trace_dir: Path, session_id: str, text: str) -> dic
         "cache_write_tokens": sum(c.get("cache_write_tokens", 0) for c in calls),
         "output_tokens": sum(c["output_tokens"] for c in calls),
         "cost_usd": round(sum(c["cost_usd"] or 0 for c in calls), 4),
-        "outcome": reply.kind,
-        "reply": reply.message.replace("\n", " ")[:90],
+        "outcome": reply.outcome.kind,
+        "tools": tools,  # which steps the model took, to compare settings on quality
+        "reply": reply.outcome.message.replace("\n", " ")[:90],
     }
 
 
@@ -115,7 +120,7 @@ def main() -> None:
     for r in results:
         print(r["prompt"][:13].ljust(14) + "".join(str(r[c]).rjust(13) for c in cols))
     for r in results:
-        print(f"  {r['prompt'][:24]!r}: {r['reply']}")
+        print(f"  {r['prompt'][:24]!r}: tools {r['tools']}\n      {r['reply']}")
     print(f"total cost: ${sum(r['cost_usd'] for r in results):.4f}")
 
 

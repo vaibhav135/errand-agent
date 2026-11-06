@@ -49,6 +49,7 @@ describe('mergeEvent', () => {
 describe('summarize', () => {
   it.each([
     [ev('r', 1, 'model_call', { agent: 'orchestrator', input_tokens: 3612, estimated_input_tokens: 3700, latency_ms: 2100 }), 'orchestrator · 3,700 est / 3,612 real · 2.1 s'],
+    [ev('r', 1, 'model_call', { agent: 'orchestrator', input_tokens: 3383, estimated_input_tokens: 3743, cache_read_tokens: 3305, latency_ms: 1300 }), 'orchestrator · 3,743 est / 3,383 real · 3,305 cached · 1.3 s'],
     [ev('r', 1, 'agent_tool', { tool: 'propose_booking', status: 'ok', latency_ms: 90 }), 'propose_booking · 90 ms'],
     [ev('r', 1, 'agent_tool', { tool: 'propose_booking', status: 'retry', latency_ms: 5 }), 'propose_booking · retry · 5 ms'],
     [ev('r', 1, 'tool_call', { tool: 'hold_slot', status: 'ok', latency_ms: 82 }), 'hold_slot · 82 ms'],
