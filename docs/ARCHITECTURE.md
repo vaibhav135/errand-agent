@@ -984,6 +984,12 @@ user message
     raw HTML, so model text can't inject markup). Stop aborts the display only (the
     reader is cancelled at once): the turn still finishes on the server and its reply is
     in the history after a reload. Enter sends, Shift+Enter is a new line.
+    Both sides are bubbles (the user's in the accent colour, the agent's in a surface
+    colour); a reply's cards follow its bubble rather than sitting inside it. Each
+    message shows its time underneath (full date and time on hover), in the viewer's
+    local zone; a divider ("Today", "Yesterday", "Wed, 04 Nov") marks a new day. History
+    uses the server's stored time (UTC with its offset); new messages take the
+    browser's clock when sent or received. Tests pin `TZ=Asia/Kolkata`.
   - Trace (`src/components/trace/`, `src/hooks/useTrace.ts`): runs newest first, each
     collapsible under a header (trigger, outcome, calls, tokens, cost, duration;
     "running…" until it finishes); one line per event with its key fact

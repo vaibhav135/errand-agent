@@ -55,7 +55,69 @@ const CARD = {
   },
 }
 
-afterEach(() => vi.unstubAllGlobals())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
+})
+
+/** "Now" is Fri 06 Nov 2026, 12:00 IST; only Date is faked, so streams and waits run. */
+function nowIs(iso = '2026-11-06T12:00:00+05:30') {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(new Date(iso))
+}
+
+/** The message (article) that holds this text. */
+const messageWith = (text: string) => screen.getByText(text).closest('article') as HTMLElement
+
+describe('Chat times', () => {
+  it('shows each message’s local time, and a divider when the day changes', async () => {
+    nowIs()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [
+        { role: 'user', content: 'older question', run_id: null, created_at: '2026-11-04T08:00:00+00:00' },
+        { role: 'assistant', content: 'older answer', run_id: 'r1', created_at: '2026-11-04T08:00:09+00:00' },
+        { role: 'user', content: 'yesterday', run_id: null, created_at: '2026-11-05T04:30:00+00:00' },
+        { role: 'user', content: 'this morning', run_id: null, created_at: '2026-11-06T03:32:00+00:00' },
+      ],
+    })
+
+    render(<Chat sessionId={SESSION} />)
+
+    await screen.findByText('older answer')
+    expect(screen.getAllByRole('separator').map((d) => d.textContent)).toEqual([
+      'Wed, 04 Nov',
+      'Yesterday',
+      'Today',
+    ])
+    expect(within(messageWith('older question')).getByText('13:30')).toBeInTheDocument() // 08:00 UTC
+    expect(within(messageWith('this morning')).getByText('09:02')).toBeInTheDocument()
+    expect(within(messageWith('older answer')).getByText('13:30')).toHaveAttribute(
+      'title',
+      'Wed, 04 Nov 2026, 13:30:09',
+    )
+  })
+
+  it('stamps a new message and its reply with the time they happen', async () => {
+    nowIs()
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+    })
+    render(<Chat sessionId={SESSION} />)
+
+    await type('hello')
+    expect(within(messageWith('hello')).getByText('12:00')).toBeInTheDocument()
+    expect(screen.getByRole('separator')).toHaveTextContent('Today')
+
+    vi.setSystemTime(new Date('2026-11-06T12:01:00+05:30'))
+    stream.send('final', reply({ message: 'Hi there' }))
+    stream.close()
+
+    expect(await screen.findByText('Hi there')).toBeInTheDocument()
+    expect(within(messageWith('Hi there')).getByText('12:01')).toBeInTheDocument()
+  })
+})
 
 async function type(text: string) {
   await userEvent.type(screen.getByRole('textbox', { name: 'Message' }), `${text}{Enter}`)
@@ -185,6 +247,24 @@ describe('Chat', () => {
 
     expect(await findToast("Couldn't save that: already decided")).toBeInTheDocument()
     expect(within(card).queryByText('Saved')).not.toBeInTheDocument()
+  })
+
+  it('puts the agent’s reply in its own bubble, with its cards after it', async () => {
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+    })
+    render(<Chat sessionId={SESSION} />)
+    await type('book the 11:00 slot')
+    stream.send('final', reply({ kind: 'needs_approval', message: 'Shall I?', approval: CARD }))
+    stream.close()
+
+    const card = await screen.findByRole('group', { name: 'Approve booking?' })
+    const bubble = screen.getByText('Shall I?').closest('[data-bubble]')
+    expect(bubble).toHaveAttribute('data-bubble', 'assistant')
+    expect(bubble).not.toContainElement(card) // a card is not a box inside the bubble
+    expect(bubble?.closest('article')).toContainElement(card) // but it belongs to the reply
   })
 
   it('explains a turn the server refused', async () => {

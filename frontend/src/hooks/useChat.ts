@@ -18,7 +18,12 @@ export interface ChatItem {
   role: 'user' | 'assistant' | 'notice'
   text: string
   reply?: Reply // cards to draw (final replies only; history has text alone)
+  /** When it was said (ISO): the server's time for history, the browser's for new
+   * messages; a reply still streaming has none yet. */
+  at?: string
 }
+
+const now = () => new Date().toISOString()
 
 export interface ChatOptions {
   onTrace?: (event: TraceEvent) => void
@@ -46,7 +51,14 @@ export function useChat(sessionId: string | null, options: ChatOptions = {}) {
     getMessages(sessionId)
       .then((history) => {
         if (cancelled) return
-        setItems(history.map((m) => ({ id: nextId++, role: m.role, text: m.content })))
+        setItems(
+          history.map((m) => ({
+            id: nextId++,
+            role: m.role,
+            text: m.content,
+            at: m.created_at || undefined,
+          })),
+        )
       })
       .catch(() => undefined) // a missing session is replaced by useSession
     return () => {
@@ -63,7 +75,7 @@ export function useChat(sessionId: string | null, options: ChatOptions = {}) {
       const replyId = nextId++
       setItems((all) => [
         ...all,
-        { id: nextId++, role: 'user', text },
+        { id: nextId++, role: 'user', text, at: now() },
         { id: replyId, role: 'assistant', text: '' },
       ])
       setBusy(true)
@@ -79,7 +91,7 @@ export function useChat(sessionId: string | null, options: ChatOptions = {}) {
           onTrace: (event) => opts.current.onTrace?.(event),
           signal: abort.signal,
         })
-        update(replyId, { text: reply.message, reply })
+        update(replyId, { text: reply.message, reply, at: now() })
         opts.current.onChanged?.()
       } catch (err) {
         const stopped = abort.signal.aborted
@@ -109,7 +121,10 @@ export function useChat(sessionId: string | null, options: ChatOptions = {}) {
     setDecided((d) => ({ ...d, [approval.approval_id]: approve ? 'approved' : 'declined' }))
     try {
       const reply = await decide(approval.approval_id, approve, approval.fingerprint)
-      setItems((all) => [...all, { id: nextId++, role: 'assistant', text: reply.message, reply }])
+      setItems((all) => [
+        ...all,
+        { id: nextId++, role: 'assistant', text: reply.message, reply, at: now() },
+      ])
       opts.current.onChanged?.()
     } catch (err) {
       setDecided((d) => {
