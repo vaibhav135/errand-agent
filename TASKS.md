@@ -42,10 +42,14 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Hard limits: model turns, tool calls, wall-clock; every exit has a user-facing outcome
 
 ## Phase 4 — Memory & context
-- [ ] `memories` table: explicit vs inferred, active / pending_confirm / forgotten
-- [ ] Inspect / correct / forget operations
-- [ ] Budgeted context selection + per-turn context log
-- [ ] Seed ≥50 memories + long prior conversation
+- [x] `memories`: closed typed keys, explicit (verbatim-quote provenance) vs inferred (pending until
+      confirmed); inspect / correct / forget (value wiped, tombstone blocks re-inference)
+- [ ] `user_profile`: structured PII collected when first needed; never sent to the model
+- [ ] `messages` table (conversation history)
+- [ ] Token estimate + relevant-memory selection within budget
+- [ ] `ContextBuilder` + per-turn `context_sent` log; tests prove forgotten / pending / PII never sent
+- [ ] Inference rules from booking history (pending only)
+- [ ] Seed ≥50 memories + long prior conversation (deterministic generator)
 
 ## Phase 5 — Agent
 - [ ] Per-run reconcile check (`reconcile_once(session_id=...)`) at the start of each user run

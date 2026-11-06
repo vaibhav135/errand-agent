@@ -52,6 +52,7 @@ EVENT_TYPES = LIFECYCLE_TYPES | {
     "context_sent",
     "tool_call",
     "approval",
+    "memory",
     "limit_hit",
     "error",
 }

@@ -24,7 +24,7 @@ RULES: dict[str, set[str]] = {
     # through it; only `api` (app wiring) ever touches the concrete mock.
     "providers": {"core"},
     "mocks": {"core", "store", "providers"},
-    "memory": {"core", "store", "tracing"},
+    "memory": {"core", "store", "tracing", "providers"},  # providers: the service vocabulary
     "workflow": {"core", "store", "tracing", "memory", "providers"},
     # proactive detects provider events and starts runs; it never needs the LLM, and
     # the agent never needs the monitor, so neither imports the other.

@@ -24,7 +24,7 @@ the enforcement mechanism. Each layer may import only the layers listed:
 | `store/`, `tracing/` | `core` | built |
 | `providers/` | `core` (the contract: `ToolEnv`, models, errors) | built |
 | `mocks/` | `core`, `store`, `providers` (the "external world" knows nothing of the agent) | Phase 2 |
-| `memory/` | `core`, `store`, `tracing` | Phase 4 |
+| `memory/` | `core`, `store`, `tracing`, `providers` (service vocabulary) | Phase 4 |
 | `workflow/` | `core`, `store`, `tracing`, `memory`, `providers` | Phase 3 |
 | `proactive/` | `core`, `store`, `tracing`, `memory`, `providers`, `workflow` | Phase 6 |
 | `agent/` | `core`, `store`, `tracing`, `memory`, `providers`, `workflow` | Phase 5 |
@@ -426,6 +426,31 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
   `GuardedToolEnv` inside `committed()`: traced, never blocked, because this is
   finishing started work.
 
+### Memory: `memory/store.py`
+User information comes in three kinds, kept in three places:
+
+| Kind | Examples | Lifetime | Where |
+|---|---|---|---|
+| Profile (identity, contact) | name, phone, email, addresses | long-term, collected when first needed | `user_profile` (next commit); **never sent to the model** beyond address labels and areas |
+| Preferences (stable habits) | "never before 10am", "Sparks is my electrician" | long-term, across errands | `memories` |
+| Errand details | "this week", "under ₹1,500 this time" | this errand only | `errands.requirements` |
+
+- **What:** `MemoryStore`: remember (explicit), propose_inferred / confirm / reject,
+  correct, forget, list_for_user.
+- **Why:** remember stable preferences across sessions; let users inspect, correct and
+  forget them; keep explicit and inferred facts apart; and never let tool output become
+  a memory (the `memory_poisoning` fixture).
+- **How:** a closed key vocabulary with typed values (`earliest_start` / `latest_start`
+  "HH:MM", `budget_max_inr` and preferred / avoided provider scoped to a service,
+  `default_address` label, topic-tagged `note`), so relevance is decided in code.
+  **Explicit facts need a quote found verbatim in the user's own message**: a review
+  can't supply one, and the model can't invent a preference. Inferred facts start
+  `pending_confirmation` and count only once confirmed; a rejected suggestion isn't
+  offered again. One active fact per (user, key, scope); a new one supersedes the old
+  (`superseded_by`). **Forget wipes value and evidence** and keeps a tombstone that also
+  blocks re-inference. Changes emit a `memory` trace event; a forget event doesn't repeat
+  the value.
+
 ### Run outcomes: `workflow/outcomes.py`
 - **What:** `RunOutcome` (kind, user-facing message, optional booking / approval card),
   mappers `for_execution` / `for_change` / `for_limit` / `for_error`, and
@@ -585,6 +610,7 @@ crashes.
 | `context_sent` | memory IDs included, token count, budget |
 | `tool_call` | `tool`, `args`, `result`, `status`, `latency_ms`, `error` |
 | `approval` | requested / granted / rejected / invalidated, `approval_id`, fingerprint |
+| `memory` | remembered / suggested / confirmed / rejected / forgotten, key, scope, source, status |
 | `limit_hit`, `error` | which limit / error type and message |
 
 ## Runtime data
