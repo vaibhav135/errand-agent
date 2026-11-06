@@ -329,6 +329,42 @@ describe('Chat', () => {
     expect(bubble?.closest('article')).toContainElement(card) // but it belongs to the reply
   })
 
+  it('puts the cursor back in the message box when the reply arrives', async () => {
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+    })
+    render(<Chat sessionId={SESSION} />)
+    await type('hello')
+    const box = screen.getByRole('textbox', { name: 'Message' })
+    box.blur() // what a browser does to a box that is disabled mid-turn
+
+    stream.send('final', reply({ message: 'Hi!' }))
+    stream.close()
+
+    await waitFor(() => expect(box).toHaveFocus())
+  })
+
+  it('puts the cursor back in the message box after a card decision', async () => {
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+      'POST /api/approvals/appr_1/decision': reply({ kind: 'answered', message: 'OK, I won’t book it.' }),
+    })
+    render(<Chat sessionId={SESSION} />)
+    await type('book it')
+    stream.send('final', reply({ kind: 'needs_approval', message: 'Shall I?', approval: CARD }))
+    stream.close()
+    const card = await screen.findByRole('group', { name: 'Approve booking?' })
+
+    await userEvent.click(within(card).getByRole('button', { name: 'Decline' })) // focus moves to the button
+
+    await screen.findByText('OK, I won’t book it.')
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message' })).toHaveFocus())
+  })
+
   // BUG-10: a turn with no tool call showed nothing until the first word arrived.
   it('shows that the agent is working before the first word (BUG-10)', async () => {
     const stream = liveStream()

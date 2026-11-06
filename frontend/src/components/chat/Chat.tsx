@@ -23,10 +23,22 @@ export function Chat({ sessionId, onTrace, onChanged }: ChatProps) {
   const chat = useChat(sessionId, { onTrace, onChanged })
   const [draft, setDraft] = useState('')
   const bottom = useRef<HTMLDivElement>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     bottom.current?.scrollIntoView?.({ block: 'end' })
   }, [chat.items, chat.progress])
+
+  // The box is disabled during a turn, which drops its focus; give it back when the
+  // reply has arrived (this runs after the render that re-enables it).
+  useEffect(() => {
+    if (!chat.busy) input.current?.focus()
+  }, [chat.busy])
+
+  const decideCard: typeof chat.decideCard = async (approval, approve) => {
+    await chat.decideCard(approval, approve)
+    input.current?.focus() // the click left focus on the card's button
+  }
 
   const submit = () => {
     const text = draft.trim()
@@ -53,7 +65,7 @@ export function Chat({ sessionId, onTrace, onChanged }: ChatProps) {
               // Nothing to read yet and no tool line: show that the agent is working.
               typing={!!item.streaming && !item.text && !chat.progress}
               decided={chat.decided}
-              onDecide={chat.decideCard}
+              onDecide={decideCard}
               onChanged={onChanged}
             />
           </Fragment>
@@ -66,6 +78,7 @@ export function Chat({ sessionId, onTrace, onChanged }: ChatProps) {
 
       <div className="flex items-end gap-2 border-t p-3">
         <Textarea
+          ref={input}
           aria-label="Message"
           placeholder="Ask for a plumber, an electrician, AC servicing…"
           className="max-h-40 min-h-10 resize-none"

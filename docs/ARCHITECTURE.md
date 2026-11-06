@@ -1066,6 +1066,9 @@ user message
     The history loads with `GET /pending`, and a card still waiting is drawn under the
     latest reply, so a replacement proposed while the user was away is there to approve.
     The Trace tab summarises `provider_cancellation` and `notice_decision` events.
+    The message box is disabled during a turn (which drops its focus), so focus returns
+    to it when the reply arrives and after a card decision: the next message can be
+    typed straight away.
   - Trace (`src/components/trace/`, `src/hooks/useTrace.ts`): runs newest first, each
     collapsible under a header (trigger, outcome, calls, tokens, cost, duration;
     "running…" until it finishes); one line per event with its key fact
