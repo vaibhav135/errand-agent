@@ -81,7 +81,8 @@ reach the user instead is decided in D2.
 
 ## D2. Suggestions reach the user through code, never through the model (2026-11-06)
 
-**Status:** accepted; implemented by the BUG-5 fix.
+**Status:** implemented by the BUG-5 fix (ARCHITECTURE.md, "Agent tools" and "Chat
+CLI"); the web UI's memory panel adds Confirm / Reject buttons in Phase 6.
 
 **Trigger:** BUG-5. In the first live chat the model listed the two pending suggestions
 ("Sparks… CoolBreeze") by value: the context builder excluded them, but the

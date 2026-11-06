@@ -11,7 +11,7 @@ listed at the end.
 | 2 | Seeded history contradicts the mock world | high | fixed |
 | 3 | The context budget isn't a cap | high | fixed |
 | 4 | Slash commands leak to the model | low | fixed |
-| 5 | The agent's own tool calls aren't traced | medium | open |
+| 5 | The agent's own tool calls aren't traced | medium | fixed |
 | 6 | An inference can contradict an explicit preference | medium | open |
 
 ## 1. Rollback masked the real database error
@@ -95,7 +95,7 @@ listed at the end.
 - **Commits:** repro `5705b2c` · fix `02234a3`
 
 ## 5. The agent's own tool calls aren't traced
-- **Status:** open
+- **Status:** fixed
 - **What broke:** in the first live chat the model mentioned the two pending suggestions
   (Sparks, CoolBreeze) although the context builder had excluded them. The run had 3
   model calls but only 1 `tool_call` event (`list_bookings`), so it most likely called
@@ -109,9 +109,16 @@ listed at the end.
   model. Decided to keep unconfirmed inferences out of the model's context entirely:
   suggestions reach the user through code (`docs/DECISIONS.md`, D2); fixed together
   with this bug.
-- **Fix:** -
-- **Regression test:** -
-- **Commits:** -
+- **Fix:** a `wrap_tool_execute` capability on the orchestrator traces every agent tool
+  call as an `agent_tool` event (arguments as sent, result, ok / retry / error,
+  latency; argument names only for the profile tools, whose values are PII). Per D2,
+  `list_memories` now returns active facts and a count of suggestions; the
+  confirm/reject tools are gone; `show_suggestions` makes code show them, and the user
+  decides in code (`/memories`, `/confirm N`, `/reject N`).
+- **Regression test:** `backend/tests/unit/test_agent_tool_tracing.py`
+  (`::test_every_agent_tool_call_is_traced`, `::test_contact_details_are_traced_by_name_only`,
+  `::test_pending_suggestions_never_reach_the_model`)
+- **Commits:** repro `584f1b8` · fix `055cc84`
 
 ## 6. An inference can contradict an explicit preference
 - **Status:** open
