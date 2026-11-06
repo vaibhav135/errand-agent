@@ -191,6 +191,38 @@ def test_one_active_fact_per_key_and_scope(seeded: sqlite3.Connection) -> None:
 # --- the context builder over a lived-in user ------------------------------------------------
 
 
+def builder_for(seeded: sqlite3.Connection, clock: FakeClock, **budget: int) -> ContextBuilder:
+    ids = SequentialIdGen()
+    return ContextBuilder(
+        clock=clock,
+        errands=ErrandStore(seeded, clock=clock, ids=ids),
+        approvals=ApprovalStore(seeded, clock=clock, ids=ids),
+        memories=MemoryStore(seeded, clock=clock, ids=ids),
+        profiles=ProfileStore(seeded, clock=clock, ids=ids),
+        conversation=ConversationStore(seeded, clock=clock, ids=ids),
+        budget=ContextBudget(**budget),
+    )
+
+
+@pytest.mark.xfail(strict=True, reason="BUG-3: history comes from every session of the user")
+def test_only_the_current_session_reaches_the_model(
+    seeded: sqlite3.Connection, clock: FakeClock
+) -> None:
+    ids = SequentialIdGen()
+    ErrandStore(seeded, clock=clock, ids=ids).create_session("sess_now", user_id=U)
+    conversation = ConversationStore(seeded, clock=clock, ids=ids)
+    conversation.append("sess_now", "user", "hi")
+    conversation.append("sess_now", "assistant", "Hello! How can I help?")
+
+    p = builder_for(seeded, clock).build(
+        user_id=U, session_id="sess_now", errand_id=None, system="sys", run=None
+    )
+
+    assert p.messages == [("user", "hi"), ("assistant", "Hello! How can I help?")]
+    # getattr until the field exists; the fix commit reads it directly
+    assert getattr(p, "messages_out_of_scope", None) == 200  # seeded sessions: never sent
+
+
 def test_context_for_a_plumber_errand_over_the_seeded_user(
     seeded: sqlite3.Connection, clock: FakeClock
 ) -> None:
