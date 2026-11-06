@@ -426,6 +426,21 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
   `GuardedToolEnv` inside `committed()`: traced, never blocked, because this is
   finishing started work.
 
+### Run outcomes: `workflow/outcomes.py`
+- **What:** `RunOutcome` (kind, user-facing message, optional booking / approval card),
+  mappers `for_execution` / `for_change` / `for_limit` / `for_error`, and
+  `run_with_outcome()`, the wrapper every run goes through.
+- **Why:** "every exit path must produce a clear user-facing outcome" and "never claim
+  success until verified". The facts in each message (booked or not, provider, IST slot,
+  price) are written by code from verified results; the model may rephrase but can't
+  turn `unverified` into "Booked!".
+- **How:** `run_with_outcome()` opens the run trace, builds the budget meter and guarded
+  tool env, runs the body and converts **any** exit into a `RunOutcome`: the body's
+  result, `LimitExceeded` ("nothing was booked or changed by the step I stopped at; say
+  continue"), or an unexpected exception (logged; if the errand was mid side effect, the
+  message says we're checking with the provider instead of "nothing happened"). It
+  always finishes the trace with that outcome, so no run ends `unspecified`.
+
 ### Errand state machine: `workflow/errands.py`
 - **What:** one transition table per errand kind (`book`, `reschedule`, `cancel`),
   `next_state()`, and `ErrandStore` (errands, their requirements and an append-only

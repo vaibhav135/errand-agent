@@ -38,9 +38,8 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Reconciler: startup pass + 30 s background loop; resolves `unverified` / crashed bookings
       (completes the approved action with the same hold + key); retries `cancel_pending` until
       min(15 min after approval, 1 h before the visit), then `cancel_failed`
-- [ ] Per-run reconcile check (`reconcile_once(session_id=...)`) wired into the agent loop (Phase 5)
 - [x] Cancel / reschedule with bounded retries
-- [ ] Hard limits: model turns, tool calls, wall-clock; every exit has a user-facing outcome
+- [x] Hard limits: model turns, tool calls, wall-clock; every exit has a user-facing outcome
 
 ## Phase 4 — Memory & context
 - [ ] `memories` table: explicit vs inferred, active / pending_confirm / forgotten
@@ -49,6 +48,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [ ] Seed ≥50 memories + long prior conversation
 
 ## Phase 5 — Agent
+- [ ] Per-run reconcile check (`reconcile_once(session_id=...)`) at the start of each user run
 - [ ] PydanticAI orchestrator + tool wrappers (model configurable via env)
 - [ ] Quarantined review-reader sub-agent (no tools; typed summary only)
 - [ ] Chat-history persistence (`ModelMessagesTypeAdapter`)
