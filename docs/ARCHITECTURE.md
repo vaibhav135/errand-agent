@@ -550,6 +550,31 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
   `GuardedToolEnv` inside `committed()`: traced, never blocked, because this is
   finishing started work.
 
+### Provider monitor: `workflow/monitor.py`
+- **What:** `ProviderMonitor.check_once()` notices a provider cancelling a booking,
+  with no user prompt, and handles each cancellation exactly once; `run_periodically()`
+  repeats it in the background (Phase 7, D6).
+- **Why:** the assignment's proactive follow-up ("detect it without a user prompt,
+  decide whether and how to notify the user, find a replacement within known
+  preferences, and get fresh approval before rebooking").
+- **How:** it reads each user's bookings through the contract (`list_bookings`), never
+  the mock's internal event table (which holds the provider's reason), so a real
+  provider would need no change here. A new `cancelled_by_provider` is claimed in
+  `provider_notices` in the same transaction as the notice, so it's handled once even
+  across restarts or overlapping passes. Each one is its own run
+  (`trigger="provider_cancelled"`) with `provider_cancellation` and `notice_decision`
+  events; a pass that finds nothing leaves no trace.
+
+| Situation | Decision | The user |
+|---|---|---|
+| the slot has already passed | `past` | not told (recorded only) |
+| another confirmed booking for the same service within a day | `notify_only` | told, with the booking that covers it; no search |
+| otherwise | `replace` | told, and a replacement is looked for |
+
+  The notice goes to the session the booking was made in (its errand), else to the
+  user's latest session. `on_notice` hands `replace` / `notify_only` notices to the app
+  after the commit; if that fails, it's logged, and the claim and notice stand.
+
 ### Memory: `memory/store.py`
 User information comes in three kinds, kept in three places:
 
