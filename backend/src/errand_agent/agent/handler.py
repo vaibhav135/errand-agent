@@ -31,6 +31,7 @@ import logging
 import sqlite3
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Literal
 
 from pydantic_ai.models import Model
@@ -243,6 +244,68 @@ class MessageHandler:
         )
         return Reply(outcome=outcome, run_id=run_id, suggestions=tuple(turn.shown))
 
+    async def pick(self, *, session_id: str, provider_id: str, slot: datetime) -> Reply:
+        """A slot clicked on the slots card: hold exactly that, in code (no model), and
+        return its approval card. Picking never books; approval is still its own step.
+        Raises KeyError when the session has no open booking request, ValueError when
+        the slot isn't one of the options it was offered."""
+        errand = self._errands.latest_open(session_id)
+        if errand is None or errand.kind != "book":
+            raise KeyError(f"no booking request open in session {session_id!r}")
+        raw = self._errands.options_json(errand.errand_id)
+        ranked = RankedOptions.model_validate_json(raw) if raw else RankedOptions(options=[])
+        option = next(
+            (o for o in ranked.options if o.provider_id == provider_id and slot in o.slots), None
+        )
+        if option is None:
+            raise ValueError("that slot is not one of the options offered")
+        self._conversation.append(  # the click, recorded for the model's next turn
+            session_id, "user", f"[Picked on the slots card: {option.name}, {when(slot)}]"
+        )
+
+        run_id = ""
+
+        async def body(ctx: RunContext) -> RunOutcome:
+            nonlocal run_id
+            run_id = ctx.run.run_id
+            ctx.errand_id = errand.errand_id
+            current = self._errands.get(errand.errand_id)
+            if current.state != "comparing":  # a card is out: one hold at a time
+                return RunOutcome(
+                    kind="answered",
+                    message="A card is already waiting for your approval. Approve or"
+                    " decline it first, then pick another slot.",
+                )
+            proposal = await self._booking_flow(ctx).propose(errand.errand_id, option, slot)
+            if proposal.approval is None:  # gone since the search: say what's left
+                lost = RunOutcome(
+                    kind="slot_gone",
+                    message=f"{option.name} at {when(slot)} is no longer available.",
+                )
+                return with_alternatives(lost, still_available(ranked, provider_id, slot))
+            d = proposal.approval.details
+            was = proposal.price_changed_from
+            price = f"₹{d.price_inr:,}" + (f" (was ₹{was:,} in the search)" if was else "")
+            return RunOutcome(
+                kind="needs_approval",
+                message=f"I've held {d.provider_name} for {when(d.slot)} at {price}."
+                " It isn't booked until you approve it.",
+                approval=proposal.approval,
+            )
+
+        outcome = await run_with_outcome(
+            self._tracer,
+            session_id=session_id,
+            trigger="slot_pick",
+            budget=self._budget,
+            env=self._env,
+            clock=self._clock,
+            errands=self._errands,
+            body=body,
+        )
+        self._conversation.append(session_id, "assistant", outcome.message, run_id=run_id)
+        return Reply(outcome=outcome, run_id=run_id)
+
     async def decide(
         self, *, session_id: str, approval_id: str, fingerprint: str, approve: bool
     ) -> Reply:
@@ -427,7 +490,9 @@ class MessageHandler:
             message = reply.strip() or "Please check the details on the card and approve."
             return RunOutcome(kind="needs_approval", message=message, approval=card)
         return RunOutcome(
-            kind="answered", message=reply.strip() or "Sorry, could you say that again?"
+            kind="answered",
+            message=reply.strip() or "Sorry, could you say that again?",
+            options=deps.searched or None,  # what was found, to pick from on the slots card
         )
 
     # --- helpers ---------------------------------------------------------------------

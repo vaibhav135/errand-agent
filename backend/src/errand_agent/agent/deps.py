@@ -38,6 +38,7 @@ from errand_agent.workflow.booking import BookingFlow
 from errand_agent.workflow.changes import ChangeFlow
 from errand_agent.workflow.errands import ErrandStore
 from errand_agent.workflow.guarded_env import BudgetMeter
+from errand_agent.workflow.ranking import Option
 
 
 @dataclass
@@ -60,6 +61,7 @@ class AgentDeps:
     errand_id: str | None = None
     cards: list[Approval] = field(default_factory=list)
     suggestions: list[Memory] = field(default_factory=list)  # for code to show the user
+    searched: list[Option] | None = None  # this run's search results: the slots card
     # Context budget for every request in this run (None = unbudgeted), the part every
     # request carries (tool definitions + instructions), and the last request's size.
     context_limit: int | None = None

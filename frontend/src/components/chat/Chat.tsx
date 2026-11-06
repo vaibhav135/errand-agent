@@ -3,7 +3,7 @@
 import { Fragment, type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 
-import type { TraceEvent } from '@/api/types'
+import type { Option, TraceEvent } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { type ChatItem, useChat } from '@/hooks/useChat'
@@ -11,6 +11,7 @@ import { useSmoothText } from '@/hooks/useSmoothText'
 import { cn } from '@/lib/utils'
 
 import { ApprovalCard, BookingCard, SuggestionsCard } from './cards'
+import { SlotPicker } from './SlotPicker'
 import { dayKey, dayLabel, formatFullTime, formatTime } from './format'
 
 export interface ChatProps {
@@ -40,6 +41,11 @@ export function Chat({ sessionId, onTrace, onChanged }: ChatProps) {
     input.current?.focus() // the click left focus on the card's button
   }
 
+  const pickSlot: typeof chat.pickSlot = async (messageId, option, slot) => {
+    await chat.pickSlot(messageId, option, slot)
+    input.current?.focus() // same: the click left focus on the slot's chip
+  }
+
   const submit = () => {
     const text = draft.trim()
     if (!text || chat.busy) return
@@ -66,6 +72,8 @@ export function Chat({ sessionId, onTrace, onChanged }: ChatProps) {
               typing={!!item.streaming && !item.text && !chat.progress}
               decided={chat.decided}
               onDecide={decideCard}
+              picked={!!chat.picked[item.id]}
+              onPick={(option, slot) => void pickSlot(item.id, option, slot)}
               onChanged={onChanged}
             />
           </Fragment>
@@ -155,12 +163,16 @@ function Message({
   typing,
   decided,
   onDecide,
+  picked,
+  onPick,
   onChanged,
 }: {
   item: ChatItem
   typing: boolean
   decided: Record<string, 'approved' | 'declined'>
   onDecide: ReturnType<typeof useChat>['decideCard']
+  picked: boolean // this reply's slots card was used
+  onPick: (option: Option, slot: string) => void
   onChanged?: () => void
 }) {
   // Called before any return: hooks must run in the same order on every render.
@@ -211,6 +223,9 @@ function Message({
         {reply?.booking && <BookingCard kind={reply.kind} booking={reply.booking} />}
         {reply && reply.suggestions.length > 0 && (
           <SuggestionsCard suggestions={reply.suggestions} onChanged={onChanged} />
+        )}
+        {reply?.options && reply.options.length > 0 && (
+          <SlotPicker options={reply.options} locked={picked} onPick={onPick} />
         )}
       </div>
       <Time at={item.at} />

@@ -10,10 +10,25 @@ const SLOT = new Intl.DateTimeFormat('en-GB', {
   hour12: false,
 })
 
+const slotParts = (iso: string) =>
+  Object.fromEntries(SLOT.formatToParts(new Date(iso)).map((p) => [p.type, p.value]))
+
 /** "Sat, 07 Nov, 11:00": built from parts so it doesn't depend on locale punctuation. */
 export function formatSlot(iso: string): string {
-  const part = Object.fromEntries(SLOT.formatToParts(new Date(iso)).map((p) => [p.type, p.value]))
+  const part = slotParts(iso)
   return `${part.weekday}, ${part.day} ${part.month}, ${part.hour}:${part.minute}`
+}
+
+/** "Sat 07 Nov": a slot's day in IST (the slots card's day tabs). */
+export function slotDay(iso: string): string {
+  const part = slotParts(iso)
+  return `${part.weekday} ${part.day} ${part.month}`
+}
+
+/** "11:00": a slot's time in IST (the slots card's chips). */
+export function slotTime(iso: string): string {
+  const part = slotParts(iso)
+  return `${part.hour}:${part.minute}`
 }
 
 // Message times are the viewer's local time (no timeZone option), unlike slots, which

@@ -50,6 +50,18 @@ export interface Suggestion {
 }
 
 /** The authoritative end of a turn: cards are drawn from this, never from text. */
+/** A provider from the last search, with the slots that can be picked (the slots card). */
+export interface Option {
+  provider_id: string
+  name: string
+  price_inr: number
+  rating: number
+  review_count: number
+  verified: boolean
+  slots: string[] // ISO, with offset
+  reasons: string[]
+}
+
 export interface Reply {
   run_id: string
   kind: OutcomeKind
@@ -57,6 +69,7 @@ export interface Reply {
   approval: Approval | null
   booking: Booking | null
   suggestions: Suggestion[]
+  options?: Option[] | null // a search's results, or what's left after a lost slot
 }
 
 export interface ChatMessage {

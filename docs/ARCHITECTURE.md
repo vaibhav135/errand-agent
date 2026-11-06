@@ -1021,6 +1021,15 @@ user message
   shows the reply without it) (BUG-8). Approval cards need no note: STATE reports any
   pending approval.
 
+  `pick(session_id=, provider_id=, slot=)` is the slots card: a click holds exactly that
+  provider and slot in code (`BookingFlow.propose`, no model, `trigger="slot_pick"`) and
+  returns its approval card; picking never books. The slot must be one the errand's
+  last search offered (else ValueError → 409); while a card is waiting it holds nothing
+  new ("approve or decline it first"); a slot gone since the search ends as `slot_gone`
+  with what's left (BUG-11). The click is saved as "[Picked on the slots card: …]" for
+  the model's next turn. A search turn's outcome carries the ranked options
+  (`RunOutcome.options`, set by `search_and_compare` on the run's deps) for that card.
+
   `handle_provider_cancellation(notice)` is the third way in (Phase 7, D6): the
   monitor's "replace" decision. It runs the same model path with a code-written prompt
   (`replacement_request`: what was cancelled, find a replacement within the saved
@@ -1072,6 +1081,10 @@ user message
     The history loads with `GET /pending`, and a card still waiting is drawn under the
     latest reply, so a replacement proposed while the user was away is there to approve.
     The Trace tab summarises `provider_cancellation` and `notice_decision` events.
+    A reply carrying options (a search, or what's left after a lost slot) shows the
+    slots card (`chat/SlotPicker.tsx`): day tabs, then each provider's times that day
+    (IST). A time posts `/pick` and the reply's approval card appears; the card then
+    locks (one hold per card; unlocked again if the request fails).
     The message box is disabled during a turn (which drops its focus), so focus returns
     to it when the reply arrives and after a card decision: the next message can be
     typed straight away.
