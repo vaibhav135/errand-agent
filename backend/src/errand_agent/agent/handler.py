@@ -20,12 +20,16 @@ How:  1. Reconcile first: settle this session's parked side effects (unverified
          - otherwise -> build the context packet, run the orchestrator with the
            packet as instructions + history (the current message goes once, as the
            prompt), and turn any approval card a tool produced into needs_approval.
-      4. Save the reply with its run id.
+      4. Save the reply with its run id. If code showed the user suggestions, the saved
+         reply ends with a note saying so (the count only), because the model next
+         turn sees only its saved text, not what code drew (BUG-8). Approval cards
+         need no note: STATE reports any pending approval.
       The session must already exist (created by the CLI / API).
 """
 
 import logging
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from pydantic_ai.models import Model
@@ -67,6 +71,15 @@ DECLINED = {
     "cancel": "OK, I'll leave your booking as it is.",
     "reschedule": "OK, your booking stays at its current time.",
 }
+
+
+def shown_note(shown: Sequence[Memory]) -> str:
+    """What code showed the user, recorded in the saved reply for the model's next turn
+    (BUG-8): the count only, never the suggestions' content."""
+    if not shown:
+        return ""
+    n = len(shown)
+    return f"\n\n[The app showed the user {n} suggestion{'' if n == 1 else 's'} to review.]"
 
 
 @dataclass(frozen=True)
@@ -153,7 +166,9 @@ class MessageHandler:
             errands=self._errands,
             body=body,
         )
-        self._conversation.append(session_id, "assistant", outcome.message, run_id=run_id)
+        self._conversation.append(
+            session_id, "assistant", outcome.message + shown_note(shown), run_id=run_id
+        )
         return Reply(outcome=outcome, run_id=run_id, suggestions=tuple(shown))
 
     # --- the three paths -------------------------------------------------------------

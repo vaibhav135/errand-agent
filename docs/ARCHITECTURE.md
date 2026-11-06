@@ -854,6 +854,12 @@ user message
   an ordinary message. Two messages in one session at the same time is left to a
   per-session lock in the API layer.
 
+  Next turn the model sees only its saved *text*, not what code drew. So when code
+  showed suggestions, the saved reply ends with `[The app showed the user N
+  suggestions to review.]` (the count only, never their content; the user's screen
+  shows the reply without it) (BUG-8). Approval cards need no note: STATE reports any
+  pending approval.
+
 ## Run lifecycle
 
 A **run** is one inbound event handled end to end: a user message, an approval click, or

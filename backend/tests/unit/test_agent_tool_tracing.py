@@ -104,7 +104,6 @@ async def test_show_suggestions_hands_them_to_code_not_the_model(world: World) -
     assert "'shown': 2" in seen or '"shown": 2' in seen  # only how many
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-8: the model doesn't know what code showed the user")
 async def test_next_turn_the_model_knows_suggestions_were_shown(world: World) -> None:
     seed_demo_user(world.conn, world.clock)
     model = Seeing(
