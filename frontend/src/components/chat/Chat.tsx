@@ -3,7 +3,7 @@
 import { Fragment, type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 
-import type { TraceEvent } from '@/api/types'
+import type { Option, TraceEvent } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { type ChatItem, useChat } from '@/hooks/useChat'
@@ -11,6 +11,7 @@ import { useSmoothText } from '@/hooks/useSmoothText'
 import { cn } from '@/lib/utils'
 
 import { ApprovalCard, BookingCard, SuggestionsCard } from './cards'
+import { SlotPicker } from './SlotPicker'
 import { dayKey, dayLabel, formatFullTime, formatTime } from './format'
 
 export interface ChatProps {
@@ -23,10 +24,27 @@ export function Chat({ sessionId, onTrace, onChanged }: ChatProps) {
   const chat = useChat(sessionId, { onTrace, onChanged })
   const [draft, setDraft] = useState('')
   const bottom = useRef<HTMLDivElement>(null)
+  const input = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     bottom.current?.scrollIntoView?.({ block: 'end' })
   }, [chat.items, chat.progress])
+
+  // The box is disabled during a turn, which drops its focus; give it back when the
+  // reply has arrived (this runs after the render that re-enables it).
+  useEffect(() => {
+    if (!chat.busy) input.current?.focus()
+  }, [chat.busy])
+
+  const decideCard: typeof chat.decideCard = async (approval, approve) => {
+    await chat.decideCard(approval, approve)
+    input.current?.focus() // the click left focus on the card's button
+  }
+
+  const pickSlot: typeof chat.pickSlot = async (messageId, option, slot) => {
+    await chat.pickSlot(messageId, option, slot)
+    input.current?.focus() // same: the click left focus on the slot's chip
+  }
 
   const submit = () => {
     const text = draft.trim()
@@ -53,7 +71,9 @@ export function Chat({ sessionId, onTrace, onChanged }: ChatProps) {
               // Nothing to read yet and no tool line: show that the agent is working.
               typing={!!item.streaming && !item.text && !chat.progress}
               decided={chat.decided}
-              onDecide={chat.decideCard}
+              onDecide={decideCard}
+              picked={!!chat.picked[item.id]}
+              onPick={(option, slot) => void pickSlot(item.id, option, slot)}
               onChanged={onChanged}
             />
           </Fragment>
@@ -66,6 +86,7 @@ export function Chat({ sessionId, onTrace, onChanged }: ChatProps) {
 
       <div className="flex items-end gap-2 border-t p-3">
         <Textarea
+          ref={input}
           aria-label="Message"
           placeholder="Ask for a plumber, an electrician, AC servicing…"
           className="max-h-40 min-h-10 resize-none"
@@ -142,12 +163,16 @@ function Message({
   typing,
   decided,
   onDecide,
+  picked,
+  onPick,
   onChanged,
 }: {
   item: ChatItem
   typing: boolean
   decided: Record<string, 'approved' | 'declined'>
   onDecide: ReturnType<typeof useChat>['decideCard']
+  picked: boolean // this reply's slots card was used
+  onPick: (option: Option, slot: string) => void
   onChanged?: () => void
 }) {
   // Called before any return: hooks must run in the same order on every render.
@@ -198,6 +223,9 @@ function Message({
         {reply?.booking && <BookingCard kind={reply.kind} booking={reply.booking} />}
         {reply && reply.suggestions.length > 0 && (
           <SuggestionsCard suggestions={reply.suggestions} onChanged={onChanged} />
+        )}
+        {reply?.options && reply.options.length > 0 && (
+          <SlotPicker options={reply.options} locked={picked} onPick={onPick} />
         )}
       </div>
       <Time at={item.at} />

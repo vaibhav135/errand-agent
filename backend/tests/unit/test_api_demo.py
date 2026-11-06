@@ -58,6 +58,21 @@ def test_providers_are_listed_for_the_price_picker(
         assert off.get("/api/demo/providers").status_code == 404
 
 
+def test_the_state_shows_what_is_armed_with_provider_names(demo: TestClient) -> None:
+    assert demo.get("/api/demo/state").json() == {"next_book": None, "price_drift": []}
+    demo.post("/api/demo/next-book", json={"outcome": "slot_taken"})
+    demo.post("/api/demo/price-drift", json={"provider_id": "plm_quickfix", "fraction": 0.2})
+
+    state = demo.get("/api/demo/state").json()
+
+    assert state == {
+        "next_book": "slot_taken",
+        "price_drift": [
+            {"provider_id": "plm_quickfix", "name": "QuickFix Plumbing", "fraction": 0.2}
+        ],
+    }
+
+
 def test_prices_can_drift_and_everything_resets(demo: TestClient) -> None:
     drift = demo.post(
         "/api/demo/price-drift", json={"provider_id": "plm_quickfix", "fraction": 0.2}

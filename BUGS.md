@@ -17,6 +17,7 @@ listed at the end.
 | 8 | The model doesn't know what code showed the user | medium | fixed |
 | 9 | The test suite runs out of file descriptors on a default Mac | medium | fixed |
 | 10 | The web chat shows nothing while the agent works on a reply | medium | fixed |
+| 11 | "Here are your other options" after a taken slot, but none are shown | medium | fixed |
 
 ## 1. Rollback masked the real database error
 - **What broke:** When a write failed in a way that makes SQLite end the transaction
@@ -232,6 +233,28 @@ listed at the end.
   tool's progress line", "marks the reply as streaming until the final arrives,
   revealing text steadily")
 - **Commits:** repro `57c7d25` · fix `60fcc60`
+
+## 11. "Here are your other options" after a taken slot, but none are shown
+- **Status:** fixed
+- **What broke:** the user approved QuickFix Plumbing at 11:00 with the Demo tab's
+  "slot taken" armed. The reply was "Someone else took that slot just before I could
+  confirm it. Here are your other options." and nothing followed.
+- **Why:** a taken slot ends on the approval path, which is decided in code with no
+  model (by design). Its outcome is a fixed sentence (`workflow/outcomes.py`) that
+  promises options, but the outcome carries none and no code lists them. The errand does
+  go back to "comparing" with the last search's options still stored, so they exist;
+  nobody shows them. `slot_gone` (a hold that expired and couldn't be re-held) has the
+  same gap: "Want to choose another time?" with nothing to choose from.
+- **How found:** the user, testing the Demo tab's "slot taken".
+- **Fix:** the two messages now only say what happened, and code adds what's left:
+  the errand's last search minus the lost slot (top 3), listed by day under "Still
+  available when I searched", and carried in `RunOutcome.options` for the UI (the slot
+  picker draws them). With nothing left, it offers to search again. Picking one holds it
+  again, which re-checks with the provider, so a stale option can't book.
+- **Regression test:** `backend/tests/unit/test_agent_handler.py::test_a_taken_slot_lists_the_options_still_available`,
+  plus the edge cases in `test_workflow_outcomes.py` (only the lost slot is dropped;
+  nothing left offers a new search).
+- **Commits:** repro `2031167` · fix `972056b`
 
 ## Not bugs: follow-ups found alongside
 

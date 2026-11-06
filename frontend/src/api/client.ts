@@ -81,6 +81,14 @@ export async function sendMessage(
   throw new ApiError(res.status, 'the turn ended without a reply')
 }
 
+/** A slot clicked on the slots card: held in code; the reply carries its approval card. */
+export function pickSlot(sessionId: string, providerId: string, slot: string): Promise<Reply> {
+  return json(`/api/sessions/${sessionId}/pick`, {
+    method: 'POST',
+    body: JSON.stringify({ provider_id: providerId, slot }),
+  })
+}
+
 /** A card's Approve / Decline: sends back the fingerprint of the card that was shown. */
 export function decide(approvalId: string, approve: boolean, fingerprint: string): Promise<Reply> {
   return json(`/api/approvals/${approvalId}/decision`, {
@@ -168,6 +176,16 @@ export interface ProviderListing {
 
 export function getDemoProviders(): Promise<ProviderListing[]> {
   return json('/api/demo/providers')
+}
+
+/** What is armed on the mock: shown pressed in the Demo tab until a booking uses it. */
+export interface DemoState {
+  next_book: string | null // the next booking's scripted outcome
+  price_drift: Array<{ provider_id: string; name: string; fraction: number }>
+}
+
+export function getDemoState(): Promise<DemoState> {
+  return json('/api/demo/state')
 }
 
 export function demoAction(

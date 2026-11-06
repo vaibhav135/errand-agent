@@ -18,7 +18,10 @@ from errand_agent.workflow.outcomes import (
     for_execution,
     for_limit,
     run_with_outcome,
+    still_available,
+    with_alternatives,
 )
+from errand_agent.workflow.ranking import Option, RankedOptions
 from tests.unit.workflow_world import World
 
 NOW = datetime(2026, 11, 5, 3, 30, tzinfo=UTC)
@@ -226,3 +229,63 @@ async def test_no_exit_path_is_unspecified(
 
     outcomes = [e.to_dict()["outcome"] for e in events if e.type == "run_finished"]
     assert outcomes and "unspecified" not in outcomes
+
+
+# --- a lost slot: what's still on offer (BUG-11) ---------------------------------------------
+
+
+def option(provider_id: str, name: str, *slots: datetime) -> Option:
+    return Option(
+        provider_id=provider_id,
+        name=name,
+        price_inr=699,
+        rating=4.1,
+        review_count=212,
+        verified=True,
+        adjusted_rating=4.0,
+        slots=list(slots),
+        reasons=[],
+    )
+
+
+ELEVEN = datetime(2026, 11, 7, 11, 0, tzinfo=IST)
+NOON = datetime(2026, 11, 7, 12, 0, tzinfo=IST)
+
+
+def test_only_the_lost_slot_is_dropped_and_an_emptied_option_goes() -> None:
+    ranked = RankedOptions(
+        options=[
+            option("plm_quickfix", "QuickFix Plumbing", ELEVEN, NOON),
+            option("plm_solo", "Solo Plumbing", ELEVEN),
+            option("plm_other", "Other Plumbing", ELEVEN),
+        ]
+    )
+
+    left = still_available(ranked, "plm_solo", ELEVEN)
+
+    assert [(o.provider_id, o.slots) for o in left] == [
+        ("plm_quickfix", [ELEVEN, NOON]),  # another provider's 11:00 is still free
+        ("plm_other", [ELEVEN]),
+    ]
+
+
+def test_the_alternatives_are_listed_by_day_with_a_way_to_pick() -> None:
+    taken = RunOutcome(kind="slot_taken", message="Someone else took that slot.")
+
+    out = with_alternatives(taken, [option("plm_quickfix", "QuickFix Plumbing", ELEVEN, NOON)])
+
+    assert out.message == (
+        "Someone else took that slot.\n\nStill available when I searched:\n\n"
+        "1. QuickFix Plumbing · ₹699 · Sat 07 Nov, 11:00, 12:00\n\n"
+        "Tell me which one, and I'll hold it for your approval."
+    )
+    assert out.options is not None and len(out.options) == 1
+
+
+def test_with_nothing_left_it_offers_to_search_again() -> None:
+    gone = RunOutcome(kind="slot_gone", message="That slot is no longer available.")
+
+    out = with_alternatives(gone, [])
+
+    assert out.message == "That slot is no longer available. Want me to search again?"
+    assert out.options == []

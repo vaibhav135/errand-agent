@@ -176,6 +176,7 @@ async def search_and_compare(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
     assert isinstance(result, SearchOk)
     ranked = rank_options(result.providers, r)
     deps.errands.set_options(errand.errand_id, ranked.model_dump_json())
+    deps.searched = list(ranked.options)  # code draws them as the slots card
     if ranked.options and errand.state == "collecting":
         deps.errands.transition(
             errand.errand_id, "options_ready", run=deps.run, reason=f"{len(ranked.options)} options"

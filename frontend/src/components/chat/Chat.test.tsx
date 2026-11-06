@@ -69,6 +69,71 @@ function nowIs(iso = '2026-11-06T12:00:00+05:30') {
 /** The message (article) that holds this text. */
 const messageWith = (text: string) => screen.getByText(text).closest('article') as HTMLElement
 
+describe('Chat: the slots card', () => {
+  const option = (provider_id: string, name: string, price_inr: number, ...slots: string[]) => ({
+    provider_id,
+    name,
+    price_inr,
+    rating: 4.2,
+    review_count: 120,
+    verified: true,
+    slots,
+    reasons: [],
+  })
+  const OPTIONS = [
+    option('plm_quickfix', 'QuickFix Plumbing', 699, '2026-11-07T11:00:00+05:30', '2026-11-07T12:00:00+05:30', '2026-11-08T10:00:00+05:30'),
+    option('plm_flowright', 'FlowRight Plumbers', 1200, '2026-11-07T14:00:00+05:30'),
+  ]
+
+  async function searched(routes: Record<string, unknown> = {}) {
+    const stream = liveStream()
+    const api = fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+      ...routes,
+    })
+    render(<Chat sessionId={SESSION} />)
+    await type('find me a plumber')
+    stream.send('final', reply({ message: 'Here they are.', options: OPTIONS }))
+    stream.close()
+    return { ...api, picker: await screen.findByRole('group', { name: 'Pick a slot' }) }
+  }
+
+  it('shows the options by day, with each provider’s times that day', async () => {
+    const { picker } = await searched()
+
+    expect(within(picker).getByRole('button', { name: 'Sat 07 Nov' })).toHaveAttribute('aria-pressed', 'true')
+    expect(within(picker).getByRole('button', { name: 'QuickFix Plumbing at Sat 07 Nov, 11:00' })).toBeInTheDocument()
+    expect(within(picker).getByRole('button', { name: 'FlowRight Plumbers at Sat 07 Nov, 14:00' })).toBeInTheDocument()
+    expect(within(picker).queryByRole('button', { name: /Sun 08 Nov, 10:00/ })).not.toBeInTheDocument()
+
+    await userEvent.click(within(picker).getByRole('button', { name: 'Sun 08 Nov' }))
+
+    expect(within(picker).getByRole('button', { name: 'QuickFix Plumbing at Sun 08 Nov, 10:00' })).toBeInTheDocument()
+    expect(within(picker).queryByText('FlowRight Plumbers')).not.toBeInTheDocument() // nothing that day
+  })
+
+  it('holds a picked slot and shows its approval card; the picker then locks', async () => {
+    const { calls, picker } = await searched({
+      [`POST /api/sessions/${SESSION}/pick`]: reply({
+        kind: 'needs_approval',
+        message: 'I’ve held QuickFix Plumbing for Sat 07 Nov, 12:00 at ₹699.',
+        approval: CARD,
+      }),
+    })
+    const chip = within(picker).getByRole('button', { name: 'QuickFix Plumbing at Sat 07 Nov, 12:00' })
+
+    await userEvent.click(chip)
+
+    expect(calls.find((c) => c.path === `/api/sessions/${SESSION}/pick`)?.body).toEqual({
+      provider_id: 'plm_quickfix',
+      slot: '2026-11-07T12:00:00+05:30',
+    })
+    expect(await screen.findByRole('group', { name: 'Approve booking?' })).toBeInTheDocument()
+    expect(chip).toBeDisabled() // one hold per card
+  })
+})
+
 describe('Chat: messages the agent sends unasked (Phase 7)', () => {
   const NOTICE = 'CoolBreeze AC Care cancelled your AC servicing booking for Tue 10 Nov, 10:00.'
 
@@ -327,6 +392,42 @@ describe('Chat', () => {
     expect(bubble).toHaveAttribute('data-bubble', 'assistant')
     expect(bubble).not.toContainElement(card) // a card is not a box inside the bubble
     expect(bubble?.closest('article')).toContainElement(card) // but it belongs to the reply
+  })
+
+  it('puts the cursor back in the message box when the reply arrives', async () => {
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+    })
+    render(<Chat sessionId={SESSION} />)
+    await type('hello')
+    const box = screen.getByRole('textbox', { name: 'Message' })
+    box.blur() // what a browser does to a box that is disabled mid-turn
+
+    stream.send('final', reply({ message: 'Hi!' }))
+    stream.close()
+
+    await waitFor(() => expect(box).toHaveFocus())
+  })
+
+  it('puts the cursor back in the message box after a card decision', async () => {
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+      'POST /api/approvals/appr_1/decision': reply({ kind: 'answered', message: 'OK, I won’t book it.' }),
+    })
+    render(<Chat sessionId={SESSION} />)
+    await type('book it')
+    stream.send('final', reply({ kind: 'needs_approval', message: 'Shall I?', approval: CARD }))
+    stream.close()
+    const card = await screen.findByRole('group', { name: 'Approve booking?' })
+
+    await userEvent.click(within(card).getByRole('button', { name: 'Decline' })) // focus moves to the button
+
+    await screen.findByText('OK, I won’t book it.')
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message' })).toHaveFocus())
   })
 
   // BUG-10: a turn with no tool call showed nothing until the first word arrived.

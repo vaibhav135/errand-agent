@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -16,9 +16,10 @@ from errand_agent.providers.errors import ProviderTimeout
 from errand_agent.tracing.recorder import Tracer
 from errand_agent.workflow.guarded_env import RunBudget
 from errand_agent.workflow.monitor import ProviderMonitor, ProviderNotice
+from errand_agent.workflow.outcomes import when
 from tests.unit.agent_script import ScriptedModel, call, say
 from tests.unit.test_agent_loop import Streaming
-from tests.unit.test_agent_tools import first_slot
+from tests.unit.test_agent_tools import ASK, FULL, first_slot
 from tests.unit.test_workflow_changes import COOLBREEZE
 from tests.unit.workflow_world import ScriptedEnv, World
 
@@ -348,6 +349,111 @@ async def test_a_typed_yes_streams_nothing(world: World) -> None:
     )
 
     assert reply.outcome.kind == "booked" and seen == []  # decided in code, no model
+
+
+# --- after a failed booking: what's still available (BUG-11) -------------------------------
+
+
+async def test_a_taken_slot_lists_the_options_still_available(tmp_path: Path) -> None:
+    world = World(tmp_path, Scenario(book_outcomes=["slot_taken"]))
+    model = ScriptedModel(
+        [call("update_requirements", **FULL)],
+        [call("search_and_compare")],
+        lambda m: [call("propose_booking", option_number=1, slot=first_slot(m))],
+        [say("Shall I book it?")],
+    )
+    h = handler(world, model.model())
+    card = (await send(h, ASK)).outcome.approval
+    assert card is not None
+    taken = card.details
+
+    reply = await send(h, "yes")
+
+    assert reply.outcome.kind == "slot_taken"
+    still = reply.outcome.options
+    assert still, "the options from the last search, to choose from"
+    assert all(  # the slot that was just taken isn't offered again
+        not (o.provider_id == taken.provider_id and taken.slot in o.slots) for o in still
+    )
+    message = reply.outcome.message
+    assert "Still available when I searched" in message
+    assert all(o.name in message for o in still)
+
+
+# --- the slots card: pick a slot in code --------------------------------------------------
+
+
+def searches() -> ScriptedModel:
+    return ScriptedModel(
+        [call("update_requirements", **FULL)],
+        [call("search_and_compare")],
+        [say("Here are three plumbers. Pick a slot.")],
+    )
+
+
+async def test_a_search_turn_carries_its_options_for_the_slots_card(world: World) -> None:
+    reply = await send(handler(world, searches().model()), ASK)
+
+    assert reply.outcome.kind == "answered" and reply.outcome.approval is None
+    options = reply.outcome.options
+    assert options and all(o.slots for o in options)
+    assert [o.name for o in options] == [
+        "FlowRight Plumbers",
+        "HomeFlow Plumbing",
+        "QuickFix Plumbing",
+    ]
+
+
+async def pick(h: MessageHandler, provider_id: str, slot: Any) -> Reply:
+    return await h.pick(session_id="sess_1", provider_id=provider_id, slot=slot)
+
+
+async def test_picking_a_slot_holds_exactly_that_and_asks_for_approval(world: World) -> None:
+    h = handler(world, searches().model())
+    options = (await send(h, ASK)).outcome.options
+    assert options
+    chosen = options[2]  # QuickFix, its second slot
+    slot = chosen.slots[1]
+
+    reply = await pick(h, chosen.provider_id, slot)
+
+    assert reply.outcome.kind == "needs_approval" and reply.outcome.approval is not None
+    d = reply.outcome.approval.details
+    assert (d.provider_id, d.slot) == (chosen.provider_id, slot)
+    assert bookings(world) == 0  # a pick never books
+    assert saved(world)[-2] == (
+        "user",
+        f"[Picked on the slots card: QuickFix Plumbing, {when(slot)}]",
+    )
+    (started,) = run_events(world, reply.run_id, "run_started")
+    assert started["trigger"] == "slot_pick"
+
+    booked = await send(h, "yes")
+
+    assert booked.outcome.kind == "booked" and bookings(world) == 1
+
+
+async def test_a_slot_that_was_not_offered_is_refused(world: World) -> None:
+    h = handler(world, searches().model())
+    options = (await send(h, ASK)).outcome.options
+    assert options
+
+    with pytest.raises(ValueError, match="not one of the options"):
+        await pick(h, options[0].provider_id, options[1].slots[0] + timedelta(minutes=7))
+
+
+async def test_a_pick_while_a_card_waits_holds_nothing_new(world: World) -> None:
+    h = handler(world, searches().model())
+    options = (await send(h, ASK)).outcome.options
+    assert options
+    await pick(h, options[0].provider_id, options[0].slots[0])
+
+    again = await pick(h, options[1].provider_id, options[1].slots[0])
+
+    assert again.outcome.approval is None
+    assert "already waiting" in again.outcome.message
+    held = world.mock_count("SELECT count(*) FROM holds")
+    assert held == 1
 
 
 # --- reconcile first ----------------------------------------------------------------------

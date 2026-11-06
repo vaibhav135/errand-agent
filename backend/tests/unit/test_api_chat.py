@@ -13,6 +13,7 @@ from errand_agent.core.clock import FakeClock
 from errand_agent.core.config import Settings
 from errand_agent.core.ids import SequentialIdGen
 from tests.unit.test_agent_loop import Streaming
+from tests.unit.test_agent_tools import ASK, FULL
 
 
 def client_for(settings: Settings, clock: FakeClock, model: Any = None) -> TestClient:
@@ -134,6 +135,41 @@ def test_a_pending_card_can_be_fetched_after_a_reload(
 
     assert [p["approval_id"] for p in pending] == [card["approval_id"]]
     assert pending[0]["fingerprint"] == card["fingerprint"]
+
+
+def test_a_search_turn_carries_options_and_a_pick_holds_one(
+    app_settings: Settings, app_clock: FakeClock
+) -> None:
+    model = FunctionModel(
+        stream_function=Streaming(
+            ("update_requirements", FULL), ("search_and_compare", {}), ["Pick a slot."]
+        )
+    )
+    with client_for(app_settings, app_clock, model) as client:
+        session_id = new_session(client)
+        options = events(client, session_id, ASK)[-1][1]["options"]
+        assert options and options[0]["slots"]
+        chosen = options[0]
+
+        picked = client.post(
+            f"/api/sessions/{session_id}/pick",
+            json={"provider_id": chosen["provider_id"], "slot": chosen["slots"][0]},
+        )
+        not_offered = client.post(
+            f"/api/sessions/{session_id}/pick",
+            json={"provider_id": chosen["provider_id"], "slot": "2030-01-01T10:00:00+05:30"},
+        )
+        no_session = client.post(
+            "/api/sessions/sess_nope/pick",
+            json={"provider_id": chosen["provider_id"], "slot": chosen["slots"][0]},
+        )
+
+    assert picked.status_code == 200
+    card = picked.json()["approval"]
+    assert picked.json()["kind"] == "needs_approval" and card is not None
+    assert card["details"]["provider_id"] == chosen["provider_id"]
+    assert not_offered.status_code == 409
+    assert no_session.status_code == 404
 
 
 def test_deciding_an_unknown_card_is_404(chat: TestClient) -> None:

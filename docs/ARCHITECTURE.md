@@ -210,8 +210,9 @@ every environment, not only on a default Mac.
 ### Demo API: `api/demo_routes.py`, `mocks/control.py`
 - **What:** `GET /api/demo` -> `{enabled}`; with `ERRAND_DEMO_MODE=true`, `POST
   /api/demo/next-book` `{outcome}`, `/provider-cancels` `{booking_id}`, `/price-drift`
-  `{provider_id, fraction}`, `/reset`, and `GET /api/demo/providers` (names for the
-  price picker).
+  `{provider_id, fraction}`, `/reset`, `GET /api/demo/providers` (names for the
+  price picker), and `GET /api/demo/state` (what is armed: the next booking's scripted
+  outcome until used, and active price changes with provider names).
 - **Why:** the demo is "a strong plus if one failure is handled live"; these make the
   provider misbehave on cue (timeout after success, slot taken, a price that changes
   at hold, a provider cancelling), with no restart.
@@ -783,6 +784,12 @@ User information comes in three kinds, kept in three places:
   continue"), or an unexpected exception (logged; if the errand was mid side effect, the
   message says we're checking with the provider instead of "nothing happened"). It
   always finishes the trace with that outcome, so no run ends `unspecified`.
+  A lost slot (`slot_taken`, `slot_gone`) ends on the approval path, with no model, so
+  code says what's left (BUG-11): `still_available()` takes the errand's last search
+  minus the lost slot (top 3), and `with_alternatives()` lists them by day ("Still
+  available when I searched") and puts them in `RunOutcome.options` for the UI, or
+  offers to search again when nothing is left. Picking one holds it again, which
+  re-checks with the provider and re-quotes, so a stale option can't book.
 
 ### Errand state machine: `workflow/errands.py`
 - **What:** one transition table per errand kind (`book`, `reschedule`, `cancel`),
@@ -1015,6 +1022,15 @@ user message
   shows the reply without it) (BUG-8). Approval cards need no note: STATE reports any
   pending approval.
 
+  `pick(session_id=, provider_id=, slot=)` is the slots card: a click holds exactly that
+  provider and slot in code (`BookingFlow.propose`, no model, `trigger="slot_pick"`) and
+  returns its approval card; picking never books. The slot must be one the errand's
+  last search offered (else ValueError → 409); while a card is waiting it holds nothing
+  new ("approve or decline it first"); a slot gone since the search ends as `slot_gone`
+  with what's left (BUG-11). The click is saved as "[Picked on the slots card: …]" for
+  the model's next turn. A search turn's outcome carries the ranked options
+  (`RunOutcome.options`, set by `search_and_compare` on the run's deps) for that card.
+
   `handle_provider_cancellation(notice)` is the third way in (Phase 7, D6): the
   monitor's "replace" decision. It runs the same model path with a code-written prompt
   (`replacement_request`: what was cancelled, find a replacement within the saved
@@ -1066,6 +1082,13 @@ user message
     The history loads with `GET /pending`, and a card still waiting is drawn under the
     latest reply, so a replacement proposed while the user was away is there to approve.
     The Trace tab summarises `provider_cancellation` and `notice_decision` events.
+    A reply carrying options (a search, or what's left after a lost slot) shows the
+    slots card (`chat/SlotPicker.tsx`): day tabs, then each provider's times that day
+    (IST). A time posts `/pick` and the reply's approval card appears; the card then
+    locks (one hold per card; unlocked again if the request fails).
+    The message box is disabled during a turn (which drops its focus), so focus returns
+    to it when the reply arrives and after a card decision: the next message can be
+    typed straight away.
   - Trace (`src/components/trace/`, `src/hooks/useTrace.ts`): runs newest first, each
     collapsible under a header (trigger, outcome, calls, tokens, cost, duration;
     "running…" until it finishes); one line per event with its key fact
@@ -1087,6 +1110,10 @@ user message
     a provider's holds quote N% more than search (percent in the UI, a fraction on the
     wire); Reset. Pickers start empty so nothing fires on a default nobody chose; each
     action says what it set in a toast, and bumps `version` so Bookings reloads.
+    What is armed shows as state (`GET /api/demo/state`, from `MockControl.state()`):
+    the scripted outcome's button stays pressed, with "Armed: the next booking will
+    hit …", until a booking uses it; active price changes are listed with a Clear. The
+    state reloads with `version`, so a booking made in the chat un-presses it.
   - Toasts (`ui/sonner.tsx`, one `<Toaster>` in `App`): every change the user makes
     outside the chat turn says how it went: memory confirm / reject / correct / forget,
     the chat's suggestion card, demo actions, new session. Errors are red toasts, except

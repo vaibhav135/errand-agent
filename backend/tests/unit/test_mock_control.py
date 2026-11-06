@@ -5,7 +5,7 @@ import pytest
 
 from errand_agent.core.clock import FakeClock
 from errand_agent.core.ids import SequentialIdGen
-from errand_agent.mocks.control import MockControl
+from errand_agent.mocks.control import DemoState, MockControl
 from errand_agent.mocks.scenario import Scenario
 from errand_agent.mocks.world import MockWorld
 from errand_agent.providers.errors import ProviderTimeout
@@ -116,6 +116,25 @@ async def test_next_booking_can_lose_the_slot(world: MockWorld, control: MockCon
     result = await world.book(hold.hold_id, "idem_demo")
 
     assert result.status == "slot_taken"
+
+
+async def test_the_state_says_what_is_armed_until_it_is_used(
+    world: MockWorld, control: MockControl
+) -> None:
+    assert control.state() == DemoState(next_book=None, price_drift={})
+
+    control.script_next_book("slot_taken")
+    control.set_price_drift("plm_flowright", 0.2)
+    armed = control.state()
+    hold = (await held(world)).hold
+    await world.book(hold.hold_id, "idem_demo")  # uses the scripted outcome
+
+    assert armed == DemoState(next_book="slot_taken", price_drift={"plm_flowright": 0.2})
+    assert control.state() == DemoState(next_book=None, price_drift={"plm_flowright": 0.2})
+
+    control.reset()
+
+    assert control.state() == DemoState(next_book=None, price_drift={})
 
 
 def test_providers_are_listed_by_name(control: MockControl) -> None:

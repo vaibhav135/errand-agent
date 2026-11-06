@@ -10,9 +10,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-import { decide, getMessages, getPending, sendMessage, subscribeEvents } from '@/api/client'
-import type { Approval, Reply, TraceEvent } from '@/api/types'
+import {
+  decide,
+  getMessages,
+  getPending,
+  pickSlot as pickSlotApi,
+  sendMessage,
+  subscribeEvents,
+} from '@/api/client'
+import type { Approval, Option, Reply, TraceEvent } from '@/api/types'
 import { progressFor } from '@/components/chat/format'
+import { errorText } from '@/lib/errors'
 
 export interface ChatItem {
   id: number
@@ -187,5 +195,33 @@ export function useChat(sessionId: string | null, options: ChatOptions = {}) {
     }
   }, [])
 
-  return { items, busy, progress, decided, send, stop, decideCard }
+  // A slot clicked on a slots card (keyed by the reply it belongs to): held in code,
+  // and the reply brings its approval card. A used card locks: one hold per card.
+  const [picked, setPicked] = useState<Record<number, true>>({})
+  const pickSlot = useCallback(
+    async (messageId: number, option: Option, slot: string) => {
+      if (!sessionId) return
+      setPicked((p) => ({ ...p, [messageId]: true }))
+      try {
+        const reply = await pickSlotApi(sessionId, option.provider_id, slot)
+        setItems((all) => [
+          ...all,
+          { id: nextId++, role: 'assistant', text: reply.message, reply, at: now() },
+        ])
+        opts.current.onChanged?.()
+      } catch (err) {
+        setPicked((p) => {
+          const { [messageId]: _, ...rest } = p // nothing was held: let them try again
+          return rest
+        })
+        setItems((all) => [
+          ...all,
+          { id: nextId++, role: 'notice', text: `Couldn't hold that slot: ${errorText(err)}` },
+        ])
+      }
+    },
+    [sessionId],
+  )
+
+  return { items, busy, progress, decided, send, stop, decideCard, picked, pickSlot }
 }

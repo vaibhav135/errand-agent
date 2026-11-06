@@ -1,7 +1,8 @@
 """Chat routes: sessions, history, and one turn answered as an SSE stream.
 
 What: `POST /api/sessions`, `GET /api/sessions/{id}/messages`,
-      `GET /api/sessions/{id}/pending` (approval cards still waiting) and
+      `GET /api/sessions/{id}/pending` (approval cards still waiting),
+      `POST /api/sessions/{id}/pick` (a slot from the slots card, held in code) and
       `POST /api/sessions/{id}/messages`, which answers with `text/event-stream`.
 
 Why:  The web UI shows a reply as it is written and the trace as it happens (D4). SSE
@@ -29,7 +30,7 @@ from typing import TYPE_CHECKING, Any
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 
 from errand_agent.agent.handler import Reply
 from errand_agent.agent.models import ModelNotConfigured
@@ -76,6 +77,11 @@ def reply_json(reply: Reply) -> dict[str, Any]:
             {"memory_id": m.memory_id, "text": describe(m), "reason": m.evidence}
             for m in reply.suggestions
         ],
+        # What can be picked on the slots card: a search's results, or what's left
+        # after a lost slot (BUG-11). Each: provider_id, name, price_inr, rating, slots…
+        "options": (
+            [o.model_dump(mode="json") for o in outcome.options] if outcome.options else None
+        ),
     }
 
 
@@ -108,6 +114,33 @@ async def decide(approval_id: str, body: DecisionIn, request: Request) -> dict[s
             fingerprint=body.fingerprint,
             approve=body.approve,
         )
+    return reply_json(reply)
+
+
+class PickIn(BaseModel):
+    provider_id: str
+    slot: AwareDatetime  # exactly as the options listed it
+
+
+@router.post("/sessions/{session_id}/pick")
+async def pick(session_id: str, body: PickIn, request: Request) -> dict[str, Any]:
+    """A slot clicked on the slots card: held in code, no model, so plain JSON. The
+    reply carries the approval card; nothing is booked until it is approved."""
+    services = _services(request)
+    _user_of(services, session_id)
+    try:
+        handler = services.handler()
+    except ModelNotConfigured as exc:
+        raise HTTPException(503, str(exc)) from exc
+    async with services.lock_for(session_id):
+        try:
+            reply = await handler.pick(
+                session_id=session_id, provider_id=body.provider_id, slot=body.slot
+            )
+        except KeyError as exc:
+            raise HTTPException(404, "no booking request open in this session") from exc
+        except ValueError as exc:
+            raise HTTPException(409, str(exc)) from exc
     return reply_json(reply)
 
 
