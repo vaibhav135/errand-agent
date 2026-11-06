@@ -502,7 +502,11 @@ User information comes in three kinds, kept in three places:
   starting at 09:00 IST or later. Cancellations are ignored and there is no "avoid"
   rule (inferring dislike is too error-prone). Every suggestion goes through
   `propose_inferred`, landing as `pending_confirmation`; forgotten, rejected or known
-  facts are skipped, so repeated runs create nothing new.
+  facts are skipped, so repeated runs create nothing new. **Explicit beats inferred**
+  (BUG-6): nothing is suggested for a key the user has stated themselves, so an old
+  9:00 booking can't produce "earliest start 09:00?" after they said "never before
+  10am". The seeded user is a fixed point: running inference over them adds nothing.
+  Suggestions reach the user only through code (D2).
 
 ### Profile: `memory/profile.py`
 - **What:** `ProfileStore`: name, phone, email and labelled addresses (one default), plus
