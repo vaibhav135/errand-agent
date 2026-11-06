@@ -124,8 +124,8 @@ conversation.
 
 ## D3. Counting tokens honestly, and sizing the budget from measured needs (2026-11-06)
 
-**Status:** implemented by the BUG-7 fix (counting, budget 7,500); the follow-ups below
-re-derive the budget once the fixed part is slimmed.
+**Status:** implemented by the BUG-7 fix (counting, budget 7,500); the fixed part was
+then slimmed and the budget re-derived (see "Re-derived after slimming" below).
 
 **Trigger:** BUG-7. The trace's calibration field showed our estimate ~45% below the
 provider's real count (4,843 vs 7,474), so a 6,000 "cap" let 7,474 through.
@@ -172,6 +172,30 @@ count, since its 2,326-token result can't fit the working room) and re-derive; i
 land near 6,000-6,500. TOON (tabular encoding for list-shaped tool results) measured
 27-40% smaller than compact JSON on our data; to be adopted for the flat lists only
 after a test shows the model still gets every id and slot it needs.
+
+**Re-derived after slimming.** `list_memories` now sends booking facts and counts
+personal notes (~3,470 -> ~780 estimated tokens per call). Tool definitions dropped from
+2,719 to 2,310 real tokens (−409; 3,009 -> 2,508 estimated), via lean schemas for
+optional parameters (a `null` branch cost ~40 tokens each) and tighter descriptions; a
+test pins every tool's parameters so the contract can't change. That's less than the
+~600-700 first predicted: enums and required fields are content, not boilerplate.
+The budget is enforced in *estimated* tokens, which run ~7-15% above real by design,
+so the need must be derived in the same units:
+
+| Component | Estimated tokens |
+|---|---|
+| tool schemas + hidden tool-use prompt | 2,858 (was 3,359) |
+| system prompt | 678 |
+| state | ~200 |
+| memories (cap) | 600 |
+| working room | 1,500 |
+| history, a 10-exchange session (1,700 real × 1.08) | ~1,840 |
+| **need** | **≈ 7,680** |
+
+**Decision: the budget stays 7,500.** The earlier "may land near 6,000-6,500" mixed real
+and estimated units and was wrong. Slimming didn't make a smaller budget possible; it
+gave the conversation room: history space within 7,500 rose from ~1,160 to ~1,660
+estimated tokens (about 5 more messages per request).
 
 **Sources:** [Anthropic token counting](https://docs.anthropic.com/en/docs/build-with-claude/token-counting) ·
 [Anthropic tool use pricing and tokens](https://docs.anthropic.com/claude/docs/tool-use-pricing-and-tokens) ·
