@@ -39,6 +39,7 @@ from errand_agent.memory.tokens import (
     TOOL_USE_OVERHEAD_TOKENS,
     estimate_json_tokens,
     estimate_tokens,
+    estimate_toon_tokens,
 )
 from errand_agent.workflow.guarded_env import LimitExceeded
 
@@ -65,9 +66,10 @@ def _part_tokens(part: Any) -> int:
     if isinstance(part, ToolCallPart):  # JSON data: arguments
         return estimate_json_tokens(part.tool_name + json.dumps(part.args_as_dict()))
     content = getattr(part, "content", "")
-    if isinstance(part, ToolReturnPart):  # results are data, even as text (TOON is dense)
-        text = content if isinstance(content, str) else json.dumps(content, default=str)
-        return estimate_json_tokens(text)
+    if isinstance(part, ToolReturnPart):  # results are data, even as text
+        if isinstance(content, str):
+            return estimate_toon_tokens(content)  # TOON is denser than JSON (1.75 vs 2.04)
+        return estimate_json_tokens(json.dumps(content, default=str))
     return estimate_tokens(content if isinstance(content, str) else str(content))
 
 
