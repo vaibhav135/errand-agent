@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -265,6 +265,25 @@ describe('Chat', () => {
     expect(bubble).toHaveAttribute('data-bubble', 'assistant')
     expect(bubble).not.toContainElement(card) // a card is not a box inside the bubble
     expect(bubble?.closest('article')).toContainElement(card) // but it belongs to the reply
+  })
+
+  // BUG-10: a turn with no tool call showed nothing until the first word arrived.
+  // `it.fails` is a strict xfail: it fails the suite once the bug is fixed.
+  it.fails('shows that the agent is working before the first word (BUG-10)', async () => {
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+    })
+    render(<Chat sessionId={SESSION} />)
+
+    await type('hello')
+
+    expect(screen.getByRole('status', { name: 'Agent is typing' })).toBeInTheDocument()
+    stream.send('text', { chunk: 'Hel' })
+    await waitFor(() =>
+      expect(screen.queryByRole('status', { name: 'Agent is typing' })).not.toBeInTheDocument(),
+    )
   })
 
   it('explains a turn the server refused', async () => {
