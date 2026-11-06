@@ -1,6 +1,6 @@
 // The chat pane: conversation, streamed replies with code-drawn cards, composer (D4).
 
-import { type KeyboardEvent, useEffect, useRef, useState } from 'react'
+import { Fragment, type KeyboardEvent, useEffect, useRef, useState } from 'react'
 import Markdown from 'react-markdown'
 
 import type { TraceEvent } from '@/api/types'
@@ -10,6 +10,7 @@ import { type ChatItem, useChat } from '@/hooks/useChat'
 import { cn } from '@/lib/utils'
 
 import { ApprovalCard, BookingCard, SuggestionsCard } from './cards'
+import { dayKey, dayLabel, formatFullTime, formatTime } from './format'
 
 export interface ChatProps {
   sessionId: string | null
@@ -43,14 +44,16 @@ export function Chat({ sessionId, onTrace, onChanged }: ChatProps) {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex-1 space-y-3 overflow-auto p-4">
-        {chat.items.map((item) => (
-          <Message
-            key={item.id}
-            item={item}
-            decided={chat.decided}
-            onDecide={chat.decideCard}
-            onChanged={onChanged}
-          />
+        {chat.items.map((item, i) => (
+          <Fragment key={item.id}>
+            {startsNewDay(chat.items, i) && <DayDivider at={item.at!} />}
+            <Message
+              item={item}
+              decided={chat.decided}
+              onDecide={chat.decideCard}
+              onChanged={onChanged}
+            />
+          </Fragment>
         ))}
         {chat.progress && (
           <div className="animate-pulse text-xs text-muted-foreground">{chat.progress}</div>
@@ -83,6 +86,34 @@ export function Chat({ sessionId, onTrace, onChanged }: ChatProps) {
   )
 }
 
+/** Whether item i is the first dated message of its day (undated ones, like a reply
+ * still streaming or a notice, never start a day). */
+function startsNewDay(items: ChatItem[], i: number): boolean {
+  const at = items[i].at
+  if (!at || items[i].role === 'notice') return false
+  const previous = items.slice(0, i).findLast((item) => item.at && item.role !== 'notice')
+  return !previous || dayKey(previous.at!) !== dayKey(at)
+}
+
+function DayDivider({ at }: { at: string }) {
+  return (
+    <div role="separator" className="flex items-center gap-3 py-1 text-xs text-muted-foreground">
+      <span className="h-px flex-1 bg-border" />
+      <span>{dayLabel(at)}</span>
+      <span className="h-px flex-1 bg-border" />
+    </div>
+  )
+}
+
+function Time({ at }: { at?: string }) {
+  if (!at) return null
+  return (
+    <time dateTime={at} title={formatFullTime(at)} className="mt-1 px-1 text-[11px] text-muted-foreground">
+      {formatTime(at)}
+    </time>
+  )
+}
+
 function Message({
   item,
   decided,
@@ -100,8 +131,9 @@ function Message({
   if (item.role === 'user') {
     const action = item.text.startsWith('[') // a code-written line, e.g. a card click
     return (
-      <div className="flex justify-end">
+      <article className="flex flex-col items-end">
         <div
+          data-bubble={action ? undefined : 'user'}
           className={cn(
             'max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap',
             action ? 'text-xs text-muted-foreground' : 'bg-primary text-primary-foreground',
@@ -109,28 +141,37 @@ function Message({
         >
           {item.text}
         </div>
-      </div>
+        {!action && <Time at={item.at} />}
+      </article>
     )
   }
   const reply = item.reply
+  // The reply's text is a bubble (surface colour, so the user's stay the accented ones);
+  // its cards follow it, not inside it, so they aren't boxes within a box.
   return (
-    <div className="max-w-[85%] text-sm">
+    <article className="flex max-w-[85%] flex-col items-start text-sm">
       {item.text && (
-        <div className="[&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-5">
+        <div
+          data-bubble="assistant"
+          className="rounded-lg bg-muted px-3 py-2 [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-5"
+        >
           <Markdown>{item.text}</Markdown>
         </div>
       )}
-      {reply?.approval && (
-        <ApprovalCard
-          approval={reply.approval}
-          decided={decided[reply.approval.approval_id]}
-          onDecide={(approve) => void onDecide(reply.approval!, approve)}
-        />
-      )}
-      {reply?.booking && <BookingCard kind={reply.kind} booking={reply.booking} />}
-      {reply && reply.suggestions.length > 0 && (
-        <SuggestionsCard suggestions={reply.suggestions} onChanged={onChanged} />
-      )}
-    </div>
+      <div className="w-full">
+        {reply?.approval && (
+          <ApprovalCard
+            approval={reply.approval}
+            decided={decided[reply.approval.approval_id]}
+            onDecide={(approve) => void onDecide(reply.approval!, approve)}
+          />
+        )}
+        {reply?.booking && <BookingCard kind={reply.kind} booking={reply.booking} />}
+        {reply && reply.suggestions.length > 0 && (
+          <SuggestionsCard suggestions={reply.suggestions} onChanged={onChanged} />
+        )}
+      </div>
+      <Time at={item.at} />
+    </article>
   )
 }
