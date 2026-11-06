@@ -1,8 +1,11 @@
 from datetime import datetime, time, timedelta
 from pathlib import Path
 
+import pytest
+
 from errand_agent.core.clock import IST
 from errand_agent.memory.inference import infer_from_bookings
+from errand_agent.memory.seed import seed_demo_user
 from errand_agent.memory.seedgen import build_seed
 from errand_agent.memory.store import MemoryStore
 from errand_agent.mocks.scenario import Scenario
@@ -114,3 +117,36 @@ async def test_the_seeds_usual_providers_are_what_the_rules_derive(tmp_path: Pat
         for m in derived
         if m.key == "preferred_provider"
     } == {(f["scope"], f["reason"]) for f in seeded}
+
+
+# --- explicit beats inferred (BUG-6) ------------------------------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason="BUG-6: an inference can contradict an explicit fact")
+def test_an_explicit_preference_blocks_a_different_inference(tmp_path: Path) -> None:
+    world = World(tmp_path, Scenario())
+    memories = MemoryStore(world.conn, clock=world.clock, ids=world.ids)
+    memories.remember(
+        "user_1",
+        "earliest_start",
+        "10:00",
+        quote="never before 10am",
+        user_message="Please, never before 10am.",
+    )
+
+    suggested = memories.propose_inferred(
+        "user_1", "earliest_start", "09:00", reason="all 3 bookings started at 09:00 or later"
+    )
+
+    assert suggested is None  # the user said 10:00; don't ask them to confirm 09:00
+
+
+@pytest.mark.xfail(strict=True, reason="BUG-6: an inference can contradict an explicit fact")
+async def test_the_seeded_user_is_a_fixed_point_of_inference(tmp_path: Path) -> None:
+    # Everything the rules can derive for the demo user is already known, rejected, or
+    # contradicted by what they said explicitly: running inference adds nothing.
+    world = World(tmp_path, Scenario())
+    seed_demo_user(world.conn, world.clock)
+    memories = MemoryStore(world.conn, clock=world.clock, ids=world.ids)
+
+    assert await suggest_from_history(world.mock, memories, "user_1") == []
