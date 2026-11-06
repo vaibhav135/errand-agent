@@ -144,16 +144,24 @@ async def test_another_booking_for_that_service_means_a_notice_but_no_search(
     assert setup.told == [notice]  # told, so the chat can show it; no replacement run
 
 
-async def test_the_session_where_it_was_booked_is_told(world: World, setup: Setup) -> None:
+async def test_the_users_newest_session_is_told_even_if_booked_in_an_older_one(
+    world: World, setup: Setup
+) -> None:
+    # Booked in an earlier chat, then the user started a new one: the notice must reach
+    # the chat the user is in, not the one they left (BUG-13).
     errand_id, approval_id = await world.approved_errand()  # a plumber, booked in sess_1
     booked = await world.flow().execute(errand_id, approval_id)
     assert booked.booking is not None
-    world.errands.create_session("sess_2", user_id="user_1")  # a newer session
+    world.clock.advance(60)
+    world.errands.create_session("sess_2", user_id="user_1")  # the user's new chat
     provider_cancels(world, booked.booking.booking_id)
 
     (notice,) = await setup.monitor().check_once()
 
-    assert notice.session_id == "sess_1"
+    assert notice.session_id == "sess_2"
+    (said,) = setup.said("sess_2")
+    assert "cancelled your" in said
+    assert not any("cancelled your" in m for m in setup.said("sess_1"))
 
 
 async def test_a_booking_the_agent_did_not_make_goes_to_the_latest_session(

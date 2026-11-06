@@ -556,8 +556,8 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
 | another confirmed booking for the same service within a day | `notify_only` | told, with the booking that covers it; no search |
 | otherwise | `replace` | told, and a replacement is looked for |
 
-  The notice goes to the session the booking was made in (its errand), else to the
-  user's latest session. `on_notice` hands `replace` / `notify_only` notices to the app
+  The notice goes to the user's latest session, even for a booking made in an older
+  one: that's the chat they're in (BUG-13). `on_notice` hands `replace` / `notify_only` notices to the app
   after the commit; if that fails, it's logged, and the claim and notice stand.
 
 ### Memory: `memory/store.py`
