@@ -1,5 +1,5 @@
 # Dev tasks. Targets are written for GNU Make 3.81 (the macOS default).
-.PHONY: help install dev dev-backend dev-frontend chat test lint format seed-data build
+.PHONY: help install dev dev-backend dev-frontend chat test lint format seed-data calibrate build
 
 BACKEND := backend
 FRONTEND := frontend
@@ -36,6 +36,9 @@ format: ## Auto-format backend
 
 seed-data: ## Regenerate the committed demo-user seed (memories + conversation)
 	cd $(BACKEND) && uv run python -m errand_agent.memory.seedgen
+
+calibrate: ## Measure real token counts (free count_tokens API; needs a key) for the estimator test
+	cd $(BACKEND) && uv run python scripts/calibrate_tokens.py
 
 build: ## Production build of the frontend
 	cd $(FRONTEND) && bun run build
