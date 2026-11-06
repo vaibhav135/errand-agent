@@ -88,6 +88,7 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 | `ERRAND_MOCK_SEED` | `42` |
 | `ERRAND_MAX_MODEL_TURNS` / `ERRAND_MAX_TOOL_CALLS` / `ERRAND_MAX_RUN_SECONDS` | `8` / `20` / `60` (per-run hard limits) |
 | `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
+| `ERRAND_MONITOR_INTERVAL_SECONDS` | `10` (provider monitor: checks `list_bookings` for cancellations, D6; `0` disables the loop) |
 | `ERRAND_CONTEXT_TOKEN_BUDGET` / `ERRAND_MEMORY_TOKEN_BUDGET` | `7500` / `600` (estimated tokens per model request, calibrated never to undercount; 7,500 derived in DECISIONS D3) |
 | `ERRAND_SEED_DEMO_USER` | `true` (load the generated demo user into an empty DB) |
 | `ERRAND_DEMO_MODE` | `false` (expose `/api/demo/*` and the UI's Demo tab: trigger failures live) |
@@ -146,6 +147,21 @@ every environment, not only on a default Mac.
   system clock and random ids. `build_handler(services)` makes the `MessageHandler`
   (models and budgets from Settings) for both the chat CLI and the API, so they can't
   drift; it is separate from `build_services` so the app starts without a model key.
+  Background loops: the reconciler (`ERRAND_RECONCILE_INTERVAL_SECONDS`) and the
+  provider monitor (`ERRAND_MONITOR_INTERVAL_SECONDS`, D6); `0` turns either off.
+
+### Proactive follow-up: `api/proactive.py`
+- **What:** `handle_notice(services, notice)`, the provider monitor's `on_notice` in
+  the app (Phase 7, D6).
+- **Why:** the monitor decides and records; the app decides who hears it and runs the
+  replacement turn.
+- **How:** the notice (already saved by the monitor) is pushed at once as a `message`
+  event, even mid-turn, so the user hears the news first. For `replace`, the replacement
+  run (`handle_provider_cancellation`) takes the session's lock, so it waits for a turn
+  in progress and never interleaves with one; its reply, with any approval card, is
+  pushed the same way. With no model configured, a code-written fallback is saved and
+  pushed instead, so the user is never left with only "I'm looking…". A closed browser
+  finds both in the history, and the card via `GET /api/sessions/{id}/pending`.
 
 ### Chat API: `api/chat_routes.py`, `api/events.py`
 - **What:** `POST /api/sessions`; `GET /api/sessions/{id}/messages` (history);
@@ -173,6 +189,11 @@ every environment, not only on a default Mac.
   with plain JSON (decided in code, no model, nothing to stream). The UI sends back the
   fingerprint of the card it displayed, so a card whose details changed since is not
   approved: the reply says so and carries the current card.
+  **Pending cards:** `GET /api/sessions/{id}/pending` lists the session's approval cards
+  still waiting, so a card made while the user was away (D6) is drawn when they look.
+  The hub's listeners get `(name, data)`: `trace` events, and `message` events
+  (`publish_message`: something the agent says unasked); a turn's stream forwards only
+  its trace.
 
 ### Trace API: `api/trace_routes.py`
 - **What:** `GET /api/events?session_id=` (SSE push) and `GET /api/sessions/{id}/runs`.
@@ -180,7 +201,8 @@ every environment, not only on a default Mac.
   provider cancelled"), so the trace pane also listens to a push stream; past runs
   make it whole again after a reload.
 - **How:** the push stream subscribes to the EventHub for one session: ": connected",
-  then a `trace` frame per event, and ": keep-alive" after `HEARTBEAT_SECONDS` (15) of
+  then a `trace` frame per event and a `message` frame per message sent unasked
+  (`{role, content, run_id, reply}`, D6), and ": keep-alive" after `HEARTBEAT_SECONDS` (15) of
   quiet, which also notices a client that left (then it unsubscribes and ends). Past
   runs are read from the JSONL trace files (newest 50), in a worker thread so a long
   history can't stall the loop; the reader touches files only, never SQLite.
@@ -549,6 +571,31 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
   The reconciler never creates a *new* hold, key or price. Calls go through
   `GuardedToolEnv` inside `committed()`: traced, never blocked, because this is
   finishing started work.
+
+### Provider monitor: `workflow/monitor.py`
+- **What:** `ProviderMonitor.check_once()` notices a provider cancelling a booking,
+  with no user prompt, and handles each cancellation exactly once; `run_periodically()`
+  repeats it in the background (Phase 7, D6).
+- **Why:** the assignment's proactive follow-up ("detect it without a user prompt,
+  decide whether and how to notify the user, find a replacement within known
+  preferences, and get fresh approval before rebooking").
+- **How:** it reads each user's bookings through the contract (`list_bookings`), never
+  the mock's internal event table (which holds the provider's reason), so a real
+  provider would need no change here. A new `cancelled_by_provider` is claimed in
+  `provider_notices` in the same transaction as the notice, so it's handled once even
+  across restarts or overlapping passes. Each one is its own run
+  (`trigger="provider_cancelled"`) with `provider_cancellation` and `notice_decision`
+  events; a pass that finds nothing leaves no trace.
+
+| Situation | Decision | The user |
+|---|---|---|
+| the slot has already passed | `past` | not told (recorded only) |
+| another confirmed booking for the same service within a day | `notify_only` | told, with the booking that covers it; no search |
+| otherwise | `replace` | told, and a replacement is looked for |
+
+  The notice goes to the session the booking was made in (its errand), else to the
+  user's latest session. `on_notice` hands `replace` / `notify_only` notices to the app
+  after the commit; if that fails, it's logged, and the claim and notice stand.
 
 ### Memory: `memory/store.py`
 User information comes in three kinds, kept in three places:
@@ -968,6 +1015,16 @@ user message
   shows the reply without it) (BUG-8). Approval cards need no note: STATE reports any
   pending approval.
 
+  `handle_provider_cancellation(notice)` is the third way in (Phase 7, D6): the
+  monitor's "replace" decision. It runs the same model path with a code-written prompt
+  (`replacement_request`: what was cancelled, find a replacement within the saved
+  preferences, propose it), `trigger="provider_replacement"`. The prompt isn't saved as
+  a user message (the user said nothing; the monitor's notice is already in the
+  conversation), and the run's `user_message` is empty, so `remember` / `correct_memory`
+  / `update_profile` can't quote code-written text as the user's words. It ends like any
+  turn: an approval card (nothing booked until a yes or a click), or an honest reply when
+  nothing fits or a limit is hit.
+
 ### Web UI: `frontend/` (D4)
 - **What:** React 19 + Tailwind v4 + shadcn (radix-nova). Chat on the left; a tabbed side
   panel (Trace, Memory, Bookings, and Demo when the server runs in demo mode).
@@ -1002,6 +1059,13 @@ user message
     arrives. `useSmoothText` reveals streamed text at a steady pace, because a short
     reply's chunks land in one burst: each frame shows at least 2 more characters and
     about 1/12 of what's still hidden, so it never lags the stream by more than ~0.5 s.
+    Messages the agent sends unasked (D6) arrive as `message` events on `/api/events`
+    (the chat and the trace each subscribe): they are appended with any card, a notice
+    without a card also shows as a toast, and the other tabs refresh. One already in the
+    history (saved just as it loaded) isn't added twice (matched by run id and text).
+    The history loads with `GET /pending`, and a card still waiting is drawn under the
+    latest reply, so a replacement proposed while the user was away is there to approve.
+    The Trace tab summarises `provider_cancellation` and `notice_decision` events.
   - Trace (`src/components/trace/`, `src/hooks/useTrace.ts`): runs newest first, each
     collapsible under a header (trigger, outcome, calls, tokens, cost, duration;
     "running…" until it finishes); one line per event with its key fact

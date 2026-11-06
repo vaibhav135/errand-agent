@@ -319,3 +319,56 @@ Phase 8 exercises the real model on more flows, and either setting can be turned
 thinking and keeps per-turn effort adjustable; a smaller model for the orchestrator
 (Haiku): untested on multi-step tool use here, and the latency came from thinking and
 call count, not model speed.
+
+## D6. Proactive follow-up: code detects and decides, the agent finds a replacement (2026-11-06)
+
+**Status:** accepted; Phase 7.
+
+**Requirement.** "When a booked provider cancels (simulated event), the agent must detect
+it without a user prompt, decide whether and how to notify the user, find a replacement
+within known preferences, and get fresh approval before rebooking."
+
+**Detect: a monitor polling the contract.** `ProviderMonitor` reads each user's bookings
+with `list_bookings` every 10 s (`ERRAND_MONITOR_INTERVAL_SECONDS`). Only the provider
+is simulated (the Demo tab's "Provider cancels", `MockControl` in tests); the monitor
+never reads the mock's internal event table, which holds the provider's reason, because
+a real provider wouldn't give us its database. So the notice can say what happened but
+not why, and a real provider would need no change here. **Rejected:** a side channel
+from the mock (a shortcut that works only because it's a mock); webhooks (the contract
+has none; if a provider offered one, it would replace only the polling).
+
+**Once only.** Each cancellation is claimed in `provider_notices` in the same transaction
+as the notice to the user: never handled twice (restarts, overlapping passes: the
+primary key refuses the second) and never claimed without its notice.
+
+**Decide: code rules, traced with their reason** (`notice_decision`):
+
+| Situation | Decision |
+|---|---|
+| the slot has already passed | `past`: recorded, nobody told |
+| another confirmed booking for the same service within a day | `notify_only`: told which booking covers it, no search |
+| the user's own cancellation (`cancelled`) | not a provider event: ignored |
+| otherwise | `replace`: told, and a replacement is looked for |
+
+How: always saved in the conversation (the session the booking was made in, else the
+latest), and pushed live to an open chat (`message` on `/api/events`, with a toast).
+**Rejected:** letting the model decide whether to notify: these rules are the
+testable part, and a wrong guess here either spams or stays silent.
+
+**Find a replacement: the agent.** For `replace`, the handler runs the model on a
+code-written prompt (what was cancelled; same service, close to that time, within saved
+preferences; propose it). It uses the same tools as a user turn, so it ends at an
+approval card: fresh approval is enforced in code, and nothing is rebooked until a yes
+or a click. The prompt is not saved as a user message and doesn't count as the user's
+words (the run's provenance text is empty, so nothing can be remembered from it). The
+run takes the session's lock, so it waits for a turn in progress. Without a model, a
+code-written fallback says so; on limits or errors, the usual honest outcome is saved.
+**Rejected:** a code-only replacement (rank and propose the top option without the
+model): cheaper and more predictable, but the assignment asks for a real LLM driving
+the tool calls, and the model path already carries preferences, explanation and limits.
+
+**Seen later.** A card proposed while the user was away comes back with the history
+(`GET /sessions/{id}/pending`), drawn under the latest reply.
+
+**Optional rule not taken:** "slot less than 2 hours away: notify only". Easy to add to
+the decision table if same-day replacements prove unrealistic.

@@ -2,7 +2,9 @@
 
 import {
   ArrowLeftRight,
+  BellRing,
   Brain,
+  CalendarX,
   ChevronDown,
   ChevronRight,
   CircleAlert,
@@ -40,6 +42,8 @@ const ICON: Record<string, ComponentType<{ className?: string }>> = {
   profile: User,
   limit_hit: CircleAlert,
   error: CircleAlert,
+  provider_cancellation: CalendarX,
+  notice_decision: BellRing,
 }
 
 export function TracePane({ runs }: { runs: Runs }) {

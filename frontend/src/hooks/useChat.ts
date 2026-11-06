@@ -8,8 +8,9 @@
 // decided in code on the server and their reply is appended like any other.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
 
-import { decide, getMessages, sendMessage } from '@/api/client'
+import { decide, getMessages, getPending, sendMessage, subscribeEvents } from '@/api/client'
 import type { Approval, Reply, TraceEvent } from '@/api/types'
 import { progressFor } from '@/components/chat/format'
 
@@ -23,9 +24,21 @@ export interface ChatItem {
   at?: string
   /** A reply still coming in: shows the typing dots, then the caret (BUG-10). */
   streaming?: boolean
+  /** The run that said it: matches a pushed message to one already in the history. */
+  runId?: string
 }
 
 const now = () => new Date().toISOString()
+
+/** A card still waiting, as the reply it belongs to (the history keeps text only). */
+const waiting = (approval: Approval, message: string): Reply => ({
+  run_id: '',
+  kind: 'needs_approval',
+  message,
+  approval,
+  booking: null,
+  suggestions: [],
+})
 
 export interface ChatOptions {
   onTrace?: (event: TraceEvent) => void
@@ -46,26 +59,57 @@ export function useChat(sessionId: string | null, options: ChatOptions = {}) {
   })
 
   // A new session mounts a fresh chat (the caller keys it by session id), so this
-  // only loads the history.
+  // only loads the history, with any card still waiting (made while the user was away,
+  // D6) drawn under the latest reply.
   useEffect(() => {
     if (!sessionId) return
     let cancelled = false
-    getMessages(sessionId)
-      .then((history) => {
+    Promise.all([getMessages(sessionId), getPending(sessionId).catch(() => [] as Approval[])])
+      .then(([history, pending]) => {
         if (cancelled) return
-        setItems(
-          history.map((m) => ({
-            id: nextId++,
-            role: m.role,
-            text: m.content,
-            at: m.created_at || undefined,
-          })),
-        )
+        const loaded: ChatItem[] = history.map((m) => ({
+          id: nextId++,
+          role: m.role,
+          text: m.content,
+          at: m.created_at || undefined,
+          runId: m.run_id ?? undefined,
+        }))
+        const card = pending.at(-1)
+        const last = loaded.findLastIndex((item) => item.role === 'assistant')
+        if (card && last >= 0) loaded[last] = { ...loaded[last], reply: waiting(card, loaded[last].text) }
+        setItems(loaded)
       })
       .catch(() => undefined) // a missing session is replaced by useSession
     return () => {
       cancelled = true
     }
+  }, [sessionId])
+
+  // Messages the agent sends unasked (a provider cancelled: D6), live on /api/events.
+  useEffect(() => {
+    if (!sessionId) return
+    return subscribeEvents(sessionId, {
+      onMessage: (m) => {
+        setItems((all) =>
+          // Already there: saved just as the history loaded.
+          all.some((item) => item.runId === m.run_id && item.text === m.content)
+            ? all
+            : [
+                ...all,
+                {
+                  id: nextId++,
+                  role: 'assistant',
+                  text: m.content,
+                  reply: m.reply ?? undefined,
+                  at: now(),
+                  runId: m.run_id,
+                },
+              ],
+        )
+        if (!m.reply) toast.info(m.content) // the news itself; a card speaks for itself
+        opts.current.onChanged?.() // e.g. the Bookings tab shows the cancellation
+      },
+    })
   }, [sessionId])
 
   const update = (id: number, change: Partial<ChatItem>) =>

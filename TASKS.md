@@ -83,8 +83,8 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
       for every change, clearer selected states
 
 ## Phase 7 — Proactive follow-up
-- [ ] Simulated provider-cancellation event + monitor
-- [ ] Notify → replacement search within preferences → fresh approval → rebook
+- [x] Simulated provider-cancellation event + monitor
+- [x] Notify → replacement search within preferences → fresh approval → rebook
 
 ## Phase 8 — Evals
 - [ ] Live smoke test (`make smoke`, skipped without a key, not part of `make test`): a real

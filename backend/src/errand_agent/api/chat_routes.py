@@ -1,6 +1,7 @@
 """Chat routes: sessions, history, and one turn answered as an SSE stream.
 
-What: `POST /api/sessions`, `GET /api/sessions/{id}/messages` and
+What: `POST /api/sessions`, `GET /api/sessions/{id}/messages`,
+      `GET /api/sessions/{id}/pending` (approval cards still waiting) and
       `POST /api/sessions/{id}/messages`, which answers with `text/event-stream`.
 
 Why:  The web UI shows a reply as it is written and the trace as it happens (D4). SSE
@@ -134,6 +135,15 @@ async def history(session_id: str, request: Request) -> list[dict[str, Any]]:
     ]
 
 
+@router.get("/sessions/{session_id}/pending")
+async def pending(session_id: str, request: Request) -> list[dict[str, Any]]:
+    """Approval cards still waiting in this session, so a card made while the user was
+    away (a replacement after a provider cancelled: D6) is shown when they look."""
+    services = _services(request)
+    _user_of(services, session_id)
+    return [a.model_dump(mode="json") for a in services.approvals.pending_for_session(session_id)]
+
+
 @router.post("/sessions/{session_id}/messages")
 async def send_message(session_id: str, body: MessageIn, request: Request) -> StreamingResponse:
     services = _services(request)
@@ -151,7 +161,10 @@ async def send_message(session_id: str, body: MessageIn, request: Request) -> St
     async def on_tool(name: str) -> None:
         await queue.put(("tool", {"tool": name}))
 
-    unsubscribe = services.hub.subscribe(session_id, lambda e: queue.put_nowait(("trace", e)))
+    # Only this turn's trace: a message sent unasked meanwhile goes out on /api/events.
+    unsubscribe = services.hub.subscribe(
+        session_id, lambda name, e: queue.put_nowait(("trace", e)) if name == "trace" else None
+    )
 
     async def turn() -> None:
         try:

@@ -69,6 +69,68 @@ function nowIs(iso = '2026-11-06T12:00:00+05:30') {
 /** The message (article) that holds this text. */
 const messageWith = (text: string) => screen.getByText(text).closest('article') as HTMLElement
 
+describe('Chat: messages the agent sends unasked (Phase 7)', () => {
+  const NOTICE = 'CoolBreeze AC Care cancelled your AC servicing booking for Tue 10 Nov, 10:00.'
+
+  it('shows a card that waited while the user was away, under the latest reply', async () => {
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [
+        { role: 'assistant', content: NOTICE, run_id: 'run_n', created_at: '' },
+        { role: 'assistant', content: 'Here is a replacement.', run_id: 'run_r', created_at: '' },
+      ],
+      [`GET /api/sessions/${SESSION}/pending`]: [CARD],
+    })
+
+    render(<Chat sessionId={SESSION} />)
+
+    const card = await screen.findByRole('group', { name: 'Approve booking?' })
+    expect(card).toHaveTextContent('FlowRight Plumbers')
+    expect(screen.getByText('Here is a replacement.').closest('article')).toContainElement(card)
+  })
+
+  it('appends a pushed notice with a toast, then the replacement with its card', async () => {
+    const { push } = fakeApi({ [`GET /api/sessions/${SESSION}/messages`]: [] })
+    const changed = vi.fn()
+    renderWithToasts(<Chat sessionId={SESSION} onChanged={changed} />)
+    await waitFor(() => expect(screen.getByRole('textbox', { name: 'Message' })).toBeEnabled())
+
+    push('message', { role: 'assistant', content: NOTICE, run_id: 'run_n', reply: null, session_id: SESSION })
+
+    expect(await findToast(NOTICE)).toBeInTheDocument()
+    // And in the conversation (the same text is in the toast, so pick the chat's copy).
+    expect(screen.getAllByText(NOTICE).filter((el) => el.closest('article'))).toHaveLength(1)
+    expect(changed).toHaveBeenCalled() // the Bookings tab shows the cancellation
+
+    push('message', {
+      role: 'assistant',
+      content: 'Here is a replacement.',
+      run_id: 'run_r',
+      reply: reply({ kind: 'needs_approval', message: 'Here is a replacement.', approval: CARD }),
+      session_id: SESSION,
+    })
+
+    const card = await screen.findByRole('group', { name: 'Approve booking?' })
+    expect(messageWith('Here is a replacement.')).toContainElement(card)
+  })
+
+  it('does not show a pushed message twice when the history already has it', async () => {
+    const { push } = fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [
+        { role: 'assistant', content: NOTICE, run_id: 'run_n', created_at: '' },
+      ],
+    })
+    render(<Chat sessionId={SESSION} />)
+    await screen.findByText(NOTICE)
+
+    push('message', { role: 'assistant', content: NOTICE, run_id: 'run_n', reply: null, session_id: SESSION })
+    // A later message: once it shows, the duplicate before it has been handled too.
+    push('message', { role: 'assistant', content: 'Later.', run_id: 'run_l', reply: null, session_id: SESSION })
+    await screen.findByText('Later.')
+
+    expect(screen.getAllByText(NOTICE)).toHaveLength(1)
+  })
+})
+
 describe('Chat times', () => {
   it('shows each message’s local time, and a divider when the day changes', async () => {
     nowIs()

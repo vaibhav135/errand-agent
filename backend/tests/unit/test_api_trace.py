@@ -56,6 +56,25 @@ async def test_the_stream_pushes_this_sessions_events_and_keeps_alive(tmp_path: 
     assert any(c.startswith(": keep-alive") for c in received)
 
 
+async def test_the_stream_also_pushes_chat_messages_for_this_session() -> None:
+    hub = EventHub()
+
+    async def connected() -> bool:
+        return False
+
+    stream = event_stream(hub, "sess_mine", connected, heartbeat_seconds=0.01)
+    await anext(stream)  # ": connected"
+    hub.publish_message("sess_other", {"role": "assistant", "content": "not yours"})
+    hub.publish_message("sess_mine", {"role": "assistant", "content": "Your provider cancelled."})
+
+    (pushed,) = frames([await anext(stream)])
+
+    assert pushed == (
+        "message",
+        {"role": "assistant", "content": "Your provider cancelled.", "session_id": "sess_mine"},
+    )
+
+
 async def test_the_stream_stops_when_the_client_leaves() -> None:
     async def gone() -> bool:
         return True

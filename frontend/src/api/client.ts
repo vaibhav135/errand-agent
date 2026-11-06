@@ -5,7 +5,7 @@
 // authoritative reply that cards are drawn from. Everything else is plain JSON.
 
 import { readSse } from './sse'
-import type { BookingRow, ChatMessage, Memory, Reply, Run, TraceEvent } from './types'
+import type { Approval, BookingRow, ChatMessage, Memory, Reply, Run, TraceEvent } from './types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -95,14 +95,36 @@ export function getRuns(sessionId: string): Promise<Run[]> {
   return json(`/api/sessions/${sessionId}/runs`)
 }
 
-/** Live trace events for a session (incl. runs nobody typed); returns a close function. */
-export function subscribeEvents(
-  sessionId: string,
-  onTrace: (event: TraceEvent) => void,
-): () => void {
+/** A message the agent sent unasked, e.g. "your provider cancelled" (D6). */
+export interface PushedMessage {
+  role: 'assistant'
+  content: string
+  run_id: string
+  reply: Reply | null // with any approval card, as a turn's `final`
+  session_id: string
+}
+
+export interface EventHandlers {
+  onTrace?: (event: TraceEvent) => void // runs nobody typed, e.g. reconcile
+  onMessage?: (message: PushedMessage) => void
+}
+
+/** The session's live push stream (`GET /api/events`); returns a close function. */
+export function subscribeEvents(sessionId: string, handlers: EventHandlers): () => void {
   const source = new EventSource(`/api/events?session_id=${encodeURIComponent(sessionId)}`)
-  source.addEventListener('trace', (e) => onTrace(JSON.parse((e as MessageEvent).data)))
+  const { onTrace, onMessage } = handlers
+  if (onTrace) {
+    source.addEventListener('trace', (e) => onTrace(JSON.parse((e as MessageEvent).data)))
+  }
+  if (onMessage) {
+    source.addEventListener('message', (e) => onMessage(JSON.parse((e as MessageEvent).data)))
+  }
   return () => source.close()
+}
+
+/** Approval cards still waiting in the session (made while the user was away: D6). */
+export function getPending(sessionId: string): Promise<Approval[]> {
+  return json(`/api/sessions/${sessionId}/pending`)
 }
 
 // --- memory and bookings -------------------------------------------------------------

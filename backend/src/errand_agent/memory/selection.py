@@ -40,7 +40,7 @@ _PRIORITY = {
     "default_address": 3,
     "note": 4,
 }
-_SERVICE_LABEL = {
+SERVICE_LABEL = {  # how a service reads in a sentence ("your AC servicing booking")
     "plumber": "plumber",
     "electrician": "electrician",
     "ac_servicing": "AC servicing",
@@ -73,7 +73,7 @@ def render(m: Memory) -> str:
 def describe(m: Memory) -> str:
     """The fact alone, in words (e.g. "Usual electrician: Sparks Electricals")."""
     v = m.value
-    svc = _SERVICE_LABEL.get(m.scope, m.scope)
+    svc = SERVICE_LABEL.get(m.scope, m.scope)
     match m.key:
         case "earliest_start" | "latest_start":
             assert isinstance(v, time)

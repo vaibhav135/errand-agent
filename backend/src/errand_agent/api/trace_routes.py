@@ -45,19 +45,19 @@ async def event_stream(
     *,
     heartbeat_seconds: float,
 ) -> AsyncIterator[str]:
-    queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
-    unsubscribe = hub.subscribe(session_id, queue.put_nowait)
+    queue: asyncio.Queue[tuple[str, dict[str, Any]]] = asyncio.Queue()
+    unsubscribe = hub.subscribe(session_id, lambda name, data: queue.put_nowait((name, data)))
     try:
         yield ": connected\n\n"
         while True:
             try:
-                event = await asyncio.wait_for(queue.get(), timeout=heartbeat_seconds)
+                name, data = await asyncio.wait_for(queue.get(), timeout=heartbeat_seconds)
             except TimeoutError:
                 if await is_disconnected():
                     return
                 yield ": keep-alive\n\n"
                 continue
-            yield sse("trace", event)
+            yield sse(name, data)  # "trace", or "message" (sent unasked: D6)
     finally:
         unsubscribe()
 
