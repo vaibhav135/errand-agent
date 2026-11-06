@@ -26,8 +26,9 @@ chat: ## Chat with the live agent in the terminal (needs ERRAND_MODEL + key in b
 
 # ulimit: run under macOS's default open-file limit everywhere, so a descriptor leak
 # fails here too, not only on a default Mac (BUG-9).
-test: ## Run backend tests
+test: ## Run backend and frontend tests
 	cd $(BACKEND) && ulimit -n 256 && uv run pytest
+	cd $(FRONTEND) && bun run test
 
 lint: ## Lint + typecheck backend and frontend
 	cd $(BACKEND) && uv run ruff check . && uv run ruff format --check . && uv run pyright

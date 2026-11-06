@@ -960,6 +960,24 @@ user message
   shows the reply without it) (BUG-8). Approval cards need no note: STATE reports any
   pending approval.
 
+### Web UI: `frontend/` (D4)
+- **What:** React 19 + Tailwind v4 + shadcn (radix-nova). Chat on the left; a tabbed side
+  panel (Trace, Memory, Bookings, and Demo when the server runs in demo mode).
+- **Why:** the demo needs chat and trace side by side; memory and bookings one click away.
+- **How:**
+  - `src/api/client.ts`: one function per backend route. A chat turn is a POST whose
+    response is the event stream, which `EventSource` can't do (GET only), so
+    `src/api/sse.ts` reads the body with `fetch` and parses frames itself, buffering
+    across network chunks (a frame can split anywhere; UTF-8 decoded in stream mode)
+    and skipping comments (": keep-alive"). The live push stream (`/api/events`) does
+    use `EventSource`, which reconnects on its own.
+  - `src/hooks/useSession.ts`: the session id is remembered in localStorage (a
+    per-browser convenience); a remembered session that's gone on the server is
+    replaced, not shown as errors.
+  - Tests: Vitest + Testing Library on jsdom (`vitest.config.ts` reuses the Vite config,
+    so `@/` resolves the same); `src/test/fakeApi.ts` routes `fetch` by method and path.
+    `make test` runs backend and frontend.
+
 ## Run lifecycle
 
 A **run** is one inbound event handled end to end: a user message, an approval click, or
