@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
+from pydantic import SecretStr
 
 from errand_agent.api.app import Services, build_handler, build_services
 from errand_agent.api.chat import chat_loop, main, render_card
@@ -128,10 +129,20 @@ async def test_ctrl_d_ends_the_chat_quietly(services: Services) -> None:
 # --- startup ---------------------------------------------------------------------------------
 
 
-def test_without_a_model_it_says_what_to_set(app_settings: Settings, app_clock: FakeClock) -> None:
+def test_without_a_key_it_says_what_to_set(app_settings: Settings, app_clock: FakeClock) -> None:
     terminal = Terminal("hi")
 
     code = main(settings=app_settings, clock=app_clock, read=terminal.read, write=terminal.write)
 
     assert code == 2
-    assert "ERRAND_MODEL" in terminal.text and "backend/.env" in terminal.text
+    assert "ANTHROPIC_API_KEY" in terminal.text and "backend/.env" in terminal.text
+
+
+def test_default_models_are_announced(app_settings: Settings, app_clock: FakeClock) -> None:
+    keyed = app_settings.model_copy(update={"anthropic_api_key": SecretStr("sk-ant-test")})
+    terminal = Terminal()  # leaves at once: no model request is made
+
+    code = main(settings=keyed, clock=app_clock, read=terminal.read, write=terminal.write)
+
+    assert code == 0
+    assert "Using default models" in terminal.out[0]

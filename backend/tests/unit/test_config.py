@@ -3,7 +3,12 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
-from errand_agent.core.config import Settings
+from errand_agent.core.config import (
+    DEFAULT_MODEL,
+    DEFAULT_REVIEW_MODEL,
+    Settings,
+    default_model_notice,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -28,7 +33,8 @@ def test_defaults() -> None:
     s = make_settings()
 
     assert s.data_dir == Path("var")
-    assert s.model is None
+    assert s.model == DEFAULT_MODEL == "anthropic:claude-sonnet-5-5"
+    assert s.review_model_spec == DEFAULT_REVIEW_MODEL == "anthropic:claude-haiku-5-5"
     assert s.mock_seed == 42
 
 
@@ -128,7 +134,52 @@ def test_blank_values_in_env_file_mean_unset(tmp_path: Path) -> None:
     s = Settings(_env_file=env_file)  # type: ignore[call-arg]
 
     assert s.anthropic_api_key is None
-    assert s.model is None
+    assert s.model == DEFAULT_MODEL
+    assert default_model_notice(s) is not None  # blank counts as "use the default"
+
+
+# --- default models -------------------------------------------------------------------------
+
+
+def test_review_reader_follows_an_explicit_main_model() -> None:
+    # Only an OpenAI key? Setting ERRAND_MODEL alone must be enough: the reader must
+    # not quietly stay on an Anthropic default that needs a second key.
+    s = make_settings(model="openai:gpt-6.1-sol")
+
+    assert s.review_model_spec == "openai:gpt-6.1-sol"
+
+
+def test_an_explicit_review_model_wins() -> None:
+    s = make_settings(model="openai:gpt-6.1-sol", review_model="openai:gpt-6.1-mini")
+
+    assert s.review_model_spec == "openai:gpt-6.1-mini"
+
+
+def test_notice_names_both_defaults() -> None:
+    notice = default_model_notice(make_settings())
+
+    assert notice is not None
+    assert "orchestrator anthropic:claude-sonnet-5-5" in notice
+    assert "review reader anthropic:claude-haiku-5-5" in notice
+    assert "ERRAND_MODEL" in notice and "backend/.env" in notice
+
+
+def test_notice_names_only_what_is_defaulted() -> None:
+    notice = default_model_notice(make_settings(review_model="anthropic:claude-haiku-5-5"))
+
+    assert notice is not None
+    assert "orchestrator" in notice and "review reader" not in notice
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"model": "anthropic:claude-opus-5-5"},  # the reader follows it: nothing defaulted
+        {"model": "anthropic:claude-opus-5-5", "review_model": "anthropic:claude-haiku-5-5"},
+    ],
+)
+def test_no_notice_when_the_models_were_chosen(overrides: dict[str, str]) -> None:
+    assert default_model_notice(make_settings(**overrides)) is None
 
 
 def test_env_example_lists_every_provider_key() -> None:

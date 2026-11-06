@@ -103,9 +103,8 @@ def build_handler(
     """Raises ModelNotConfigured (with what to set) when no model can be built."""
     settings = services.settings
     main = model or agent_models.main_model(settings)
-    if review_model is None:
-        configured = settings.review_model or settings.model
-        review_model = agent_models.review_model(settings) if configured else main
+    if review_model is None:  # a test's scripted model reads reviews too; else Settings
+        review_model = main if model is not None else agent_models.review_model(settings)
     return MessageHandler(
         conn=services.agent_db,
         clock=services.clock,

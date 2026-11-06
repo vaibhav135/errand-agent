@@ -12,8 +12,15 @@ def settings(**overrides: object) -> Settings:
     return Settings(_env_file=None, **overrides)  # type: ignore[call-arg]
 
 
-def test_no_model_configured_names_the_setting() -> None:
-    with pytest.raises(ModelNotConfigured, match="ERRAND_MODEL"):
+def test_default_models_need_only_the_anthropic_key() -> None:
+    s = settings(ANTHROPIC_API_KEY="sk-ant-test")
+
+    assert main_model(s).model_name == "claude-sonnet-5-5"
+    assert review_model(s).model_name == "claude-haiku-5-5"
+
+
+def test_default_model_without_a_key_names_the_variable() -> None:
+    with pytest.raises(ModelNotConfigured, match="ANTHROPIC_API_KEY"):
         main_model(settings())
 
 

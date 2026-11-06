@@ -14,8 +14,8 @@ How:  - anthropic:<model> -> AnthropicModel(AnthropicProvider(api_key=...)).
       - google:<model> is priced in the cost table but its SDK isn't installed: a clear
         error says so.
       - "test" -> PydanticAI's offline TestModel (no key), for local smoke runs.
-      - The review reader defaults to the main model; set ERRAND_REVIEW_MODEL to use a
-        cheaper one.
+      - Which model each role uses (defaults: Sonnet / Haiku; the reader follows an
+        explicit ERRAND_MODEL) is decided in Settings; this module only builds it.
 """
 
 from pydantic import SecretStr
@@ -38,15 +38,12 @@ def main_model(settings: Settings) -> Model:
 
 
 def review_model(settings: Settings) -> Model:
-    name = settings.review_model or settings.model
-    return build_model(name, settings, setting="ERRAND_REVIEW_MODEL or ERRAND_MODEL")
+    return build_model(
+        settings.review_model_spec, settings, setting="ERRAND_REVIEW_MODEL or ERRAND_MODEL"
+    )
 
 
-def build_model(spec: str | None, settings: Settings, *, setting: str) -> Model:
-    if not spec:
-        raise ModelNotConfigured(
-            f"no model configured: set {setting} in backend/.env, e.g. anthropic:claude-opus-5-5"
-        )
+def build_model(spec: str, settings: Settings, *, setting: str) -> Model:
     if spec == "test":
         return TestModel()
     provider, _, name = spec.partition(":")

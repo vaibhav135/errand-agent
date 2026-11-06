@@ -70,15 +70,18 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 - **What:** `Settings` (pydantic-settings), read once from `ERRAND_*` env vars / `.env`.
 - **Why:** One validated place for configuration; bad values fail at startup.
 - **How:** `data_dir` (default `var/`) is the root; DB paths and `trace_dir` derive from
-  it unless set individually. `model` is `None` until chosen. Tests pass
-  `_env_file=None` so a developer's `.env` never leaks in.
+  it unless set individually. Models default to the cheaper good ones, so one Anthropic
+  key is enough to start; `default_model_notice()` names any defaults in use (the chat
+  prints it at startup), so the choice is never silent. "Chosen" means it came from the
+  environment / `.env` (pydantic's `model_fields_set`); a blank entry counts as not
+  chosen. Tests pass `_env_file=None` so a developer's `.env` never leaks in.
 
 | Variable | Default |
 |---|---|
 | `ERRAND_DATA_DIR` | `var` (relative to `backend/`, where `make` runs) |
 | `ERRAND_AGENT_DB_PATH` / `ERRAND_MOCK_DB_PATH` / `ERRAND_TRACE_DIR` | under `data_dir` |
-| `ERRAND_MODEL` | unset (e.g. `anthropic:claude-opus-5-5`; `test` = offline TestModel) |
-| `ERRAND_REVIEW_MODEL` | unset = same as `ERRAND_MODEL` (e.g. `anthropic:claude-haiku-5-5`) |
+| `ERRAND_MODEL` | `anthropic:claude-sonnet-5-5` ($2 / $10 per M tokens: plans multi-step tool use well at half Opus's price; `test` = offline TestModel) |
+| `ERRAND_REVIEW_MODEL` | follows an explicitly set `ERRAND_MODEL` (one key of any provider is enough); otherwise `anthropic:claude-haiku-5-5` ($0.10 / $0.50: it only picks fixed labels) |
 | `ERRAND_MOCK_SEED` | `42` |
 | `ERRAND_MAX_MODEL_TURNS` / `ERRAND_MAX_TOOL_CALLS` / `ERRAND_MAX_RUN_SECONDS` | `8` / `20` / `60` (per-run hard limits) |
 | `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
@@ -702,8 +705,8 @@ stateDiagram-v2
   the variable to set.
 - **How:** `anthropic:` → `AnthropicModel`; `openai:` / `openai-responses:` →
   `OpenAIResponsesModel`; `openai-chat:` → `OpenAIChatModel`; `google:` → a clear "SDK not
-  installed" error; `test` → PydanticAI's offline `TestModel`. The review reader defaults
-  to the main model. The test suite sets `ALLOW_MODEL_REQUESTS = False`, so no test can
+  installed" error; `test` → PydanticAI's offline `TestModel`. Which model each role
+  uses is decided in Settings (see above). The test suite sets `ALLOW_MODEL_REQUESTS = False`, so no test can
   call a real API.
 
 ### Agent tools: `agent/tools.py`, `agent/deps.py`, `agent/orchestrator.py`

@@ -15,7 +15,7 @@ How:  - Standard library only: `input()` with `readline` imported gives line edi
         session starts for the demo user.
       - The card is drawn from the approval's stored details, never from the model's
         text, exactly as the web UI will.
-      - No model configured -> the reason and what to set, exit code 2.
+      - Default models in use -> a notice first; a missing key -> what to set, exit 2.
 """
 
 import asyncio
@@ -29,7 +29,7 @@ from errand_agent.agent.handler import MessageHandler, Reply
 from errand_agent.agent.models import ModelNotConfigured
 from errand_agent.api.app import Services, build_handler, build_services
 from errand_agent.core.clock import Clock, SystemClock
-from errand_agent.core.config import Settings, load_settings
+from errand_agent.core.config import Settings, default_model_notice, load_settings
 from errand_agent.core.ids import RandomIdGen
 from errand_agent.memory.seedgen import DEMO_USER_ID
 from errand_agent.workflow.approvals import Approval
@@ -133,6 +133,9 @@ def main(
     styled = write is None and sys.stdout.isatty()
     write = write or print
     settings = settings or load_settings()
+    notice = default_model_notice(settings)
+    if notice is not None:
+        write(notice)
     services = build_services(settings, clock or SystemClock(), RandomIdGen())
     try:
         try:
