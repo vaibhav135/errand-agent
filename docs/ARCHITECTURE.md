@@ -786,8 +786,11 @@ stateDiagram-v2
   (`options` column) so "option 2" is stable, and only listed slots can be proposed.
   Memory and booking tools only touch the user's own records; profile tools return saved
   field names, never values. **Suggestions never reach the model** (D2 in
-  [DECISIONS.md](DECISIONS.md), BUG-5): `list_memories` returns active facts plus how
-  many suggestions await review; `show_suggestions` makes *code* show them next to the
+  [DECISIONS.md](DECISIONS.md), BUG-5): `list_memories` returns the active facts that
+  matter for bookings (time window, budgets, providers, address, home-service notes),
+  a *count* of personal notes (listed only with `include_personal_notes`, when the user
+  asks: ~3,470 -> ~780 tokens for the demo user, D3) and how many suggestions await
+  review; `show_suggestions` makes *code* show them next to the
   reply (the model learns only how many); the user confirms or rejects in code
   (`/confirm`, `/reject`; buttons in the web UI). Every tool call is traced as an
   `agent_tool` event (`agent/tool_trace.py`, a `wrap_tool_execute` capability): the

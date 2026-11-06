@@ -1,3 +1,4 @@
+import json
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -6,6 +7,8 @@ import pytest
 
 from errand_agent.agent.deps import AgentDeps
 from errand_agent.agent.orchestrator import FORBIDDEN_TOOL_NAMES, build_orchestrator
+from errand_agent.memory.seed import seed_demo_user
+from errand_agent.memory.tokens import estimate_json_tokens
 from errand_agent.mocks.scenario import Scenario
 from tests.unit.agent_script import ScriptedModel, call, deps_for, retries, say, tool_returns
 from tests.unit.workflow_world import World
@@ -259,6 +262,43 @@ async def test_memory_tools_only_touch_the_users_own_memories(world: World) -> N
 
     assert retries(messages, "forget_memory")
     assert deps.memories.get(other.memory_id).status == "active"
+
+
+async def test_list_memories_sends_booking_facts_and_only_counts_personal_notes(
+    world: World,
+) -> None:
+    seed_demo_user(world.conn, world.clock)
+    deps = deps_for(world, "what do you remember about me?")
+
+    _, messages = await run(world, deps, [call("list_memories")], [say("ok")])
+
+    [result] = tool_returns(messages, "list_memories")
+    topics = {m.get("topic") for m in result["saved"] if m["key"] == "note"}
+    assert topics == {"home_services"}  # the dog, the parking: useful for a booking
+    assert {"earliest_start", "budget_max_inr", "default_address"} <= {
+        m["key"] for m in result["saved"]
+    }
+    personal = [
+        m
+        for m in deps.memories.list_for_user("user_1")
+        if m.status == "active" and m.key == "note" and m.topic != "home_services"
+    ]
+    assert result["personal_notes"] == len(personal) > 20  # counted, not sent
+    # Real-token size: was ~2,300 (every note); the working room is 1,500.
+    assert estimate_json_tokens(json.dumps(result)) < 800
+
+
+async def test_list_memories_can_include_personal_notes_when_asked(world: World) -> None:
+    seed_demo_user(world.conn, world.clock)
+    deps = deps_for(world, "what do you know about my food preferences?")
+
+    _, messages = await run(
+        world, deps, [call("list_memories", include_personal_notes=True)], [say("ok")]
+    )
+
+    [result] = tool_returns(messages, "list_memories")
+    assert any(m.get("topic") == "food" for m in result["saved"])
+    assert "personal_notes" not in result  # all sent, nothing left to count
 
 
 async def test_profile_details_must_be_typed_by_the_user(world: World) -> None:

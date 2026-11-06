@@ -435,12 +435,23 @@ async def remember(
     return {"saved": m.memory_id, "key": m.key, "scope": m.scope}
 
 
-async def list_memories(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
-    """What I remember about the user: their saved preferences, and how many suggestions
-    (inferred from their bookings) await their review. You never see a suggestion's
-    content; call show_suggestions to have it shown to the user."""
+def _personal(m: Memory) -> bool:
+    """A note about the user's life (food, travel, work...), not about home services."""
+    return m.key == "note" and m.topic != "home_services"
+
+
+async def list_memories(
+    ctx: RunContext[AgentDeps], include_personal_notes: bool = False
+) -> dict[str, Any]:
+    """What I remember about the user: preferences that matter for bookings (time
+    window, budgets, providers, address, home-service notes), how many personal notes
+    there are (set include_personal_notes to list them, only when the user asks), and
+    how many suggestions await their review. You never see a suggestion's content;
+    call show_suggestions to have it shown to the user."""
     remembered = ctx.deps.memories.list_for_user(ctx.deps.user_id)
-    return {
+    active = [m for m in remembered if m.status == "active"]
+    sent = [m for m in active if include_personal_notes or not _personal(m)]
+    result: dict[str, Any] = {
         "saved": [
             {
                 "memory_id": m.memory_id,
@@ -448,12 +459,18 @@ async def list_memories(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
                 "scope": m.scope,
                 "value": m.value.model_dump() if hasattr(m.value, "model_dump") else str(m.value),
                 "source": m.source,
+                **({"topic": m.topic} if m.topic else {}),
             }
-            for m in remembered
-            if m.status == "active"
+            for m in sent
         ],
         "suggestions_awaiting_review": sum(m.status == "pending_confirmation" for m in remembered),
     }
+    if not include_personal_notes:
+        # Counted, not sent: the demo user's 36 notes about food, travel or work cost
+        # ~2,700 tokens on every call (more than the 1,500 working room), for nothing a
+        # booking needs. Measured: ~3,470 -> ~780 (estimated tokens).
+        result["personal_notes"] = sum(_personal(m) for m in active)
+    return result
 
 
 async def show_suggestions(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
