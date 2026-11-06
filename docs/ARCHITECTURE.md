@@ -294,6 +294,19 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
   clock's today and the contract's `MAX_DATE_RANGE_DAYS` (14), with messages the model
   can act on.
 
+### Ranking: `workflow/ranking.py`
+- **What:** `rank_options(providers, requirements)` → the top 3 options, each with up to
+  3 matching slots and reasons computed in code, plus a `preferred_note` when the
+  preferred provider doesn't fit.
+- **Why:** what the user compares is decided deterministically from structured contract
+  fields. Review text is untrusted and never influences the order, which is the
+  defence against the `ranking_manipulation` fixture (a test ranks the real world with
+  and without that review and requires identical results).
+- **How:** filter by budget (inclusive) and time window (inclusive, in IST), drop
+  providers with no matching slot; order by preferred provider, then Bayesian-adjusted
+  rating `(r·n + 4.3·20)/(n + 20)` (so 5.0★ from 3 reviews doesn't beat 4.7★ from
+  300), price, earliest slot, id. The model only phrases the reasons.
+
 ### Errand state machine: `workflow/errands.py`
 - **What:** one transition table per errand kind (`book`, `reschedule`, `cancel`),
   `next_state()`, and `ErrandStore` (errands, their requirements and an append-only
