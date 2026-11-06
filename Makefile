@@ -1,5 +1,5 @@
 # Dev tasks. Targets are written for GNU Make 3.81 (the macOS default).
-.PHONY: help install dev demo dev-backend dev-frontend chat test lint format seed-data calibrate latency build
+.PHONY: help install dev demo dev-backend dev-frontend chat test evals smoke lint format seed-data calibrate latency build
 
 BACKEND := backend
 FRONTEND := frontend
@@ -32,6 +32,14 @@ chat: ## Chat with the live agent in the terminal (needs ERRAND_MODEL + key in b
 test: ## Run backend and frontend tests
 	cd $(BACKEND) && ulimit -n 256 && uv run pytest
 	cd $(FRONTEND) && bun run test
+
+# The same scenarios also run in `make test`; only this writes the table.
+evals: ## Run the eval scenarios and write evals/results.md
+	cd $(BACKEND) && ulimit -n 256 && uv run pytest tests/evals -m eval -q --eval-table ../evals/results.md
+
+# Live model calls: a few cents. Skipped without a key; never part of `make test`.
+smoke: ## Live smoke test: a real conversation reaches a card; nothing booked without yes
+	cd $(BACKEND) && uv run pytest -m smoke -q
 
 lint: ## Lint + typecheck backend and frontend
 	cd $(BACKEND) && uv run ruff check . && uv run ruff format --check . && uv run pyright

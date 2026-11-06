@@ -21,6 +21,15 @@ from pydantic_ai import models
 models.ALLOW_MODEL_REQUESTS = False
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    # Here, not in tests/evals/conftest.py: options must be known at startup.
+    parser.addoption(
+        "--eval-table",
+        metavar="PATH",
+        help="write the eval scenarios' results table (markdown) to PATH (make evals)",
+    )
+
+
 @pytest.fixture(autouse=True)
 def _close_sqlite_connections(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     opened: list[sqlite3.Connection] = []

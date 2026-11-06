@@ -34,7 +34,12 @@ asyncio_mode = "auto"
 # One event loop per test: no state leaks between async tests (silences the
 # pytest-asyncio "loop scope unset" deprecation warning).
 asyncio_default_fixture_loop_scope = "function"
-addopts = "-ra --strict-markers"
+# smoke tests call the real model (money, a key): only `make smoke` runs them.
+addopts = "-ra --strict-markers -m 'not smoke'"
+markers = [
+    "eval: an end-to-end eval scenario with its table row (tests/evals; make evals)",
+    "smoke: calls the real model; skipped without a key, run only by make smoke",
+]
 # Bug-repro commits use xfail(strict=True); make strict the default so an
 # unexpectedly passing repro fails the run instead of silently passing.
 xfail_strict = true
