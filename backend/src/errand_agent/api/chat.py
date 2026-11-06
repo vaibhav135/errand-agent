@@ -17,11 +17,14 @@ How:  - Standard library only: `input()` with `readline` imported gives line edi
         text, exactly as the web UI will.
       - Anything starting with "/" is a chat command, handled here: it never reaches
         the model or the saved conversation (BUG-4).
+      - A "working…" line shows while a turn runs (seconds, with a live model), and
+        PydanticAI's startup banner is turned off unless the user set it themselves.
       - Default models in use -> a notice first; a missing key -> what to set, exit 2.
 """
 
 import asyncio
 import json
+import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -106,6 +109,7 @@ async def chat_loop(
                 return
             write(f"Unknown command {text.split()[0]}. Commands: {', '.join(QUIT_COMMANDS)}")
             continue
+        write(f"{DIM}working…{RESET}" if styled else "working…")  # a turn takes seconds
         reply = await handler.handle(session_id=session_id, user_id=DEMO_USER_ID, text=text)
         write(reply.outcome.message)
         if reply.outcome.approval is not None:
@@ -138,6 +142,7 @@ def main(
         read = lambda: input("\nyou > ")  # noqa: E731
     styled = write is None and sys.stdout.isatty()
     write = write or print
+    os.environ.setdefault("PYDANTIC_AI_NO_BANNER", "1")  # its startup ad, mid-chat
     settings = settings or load_settings()
     notice = default_model_notice(settings)
     if notice is not None:

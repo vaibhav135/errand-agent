@@ -133,8 +133,8 @@ listed at the end.
 | Item | Kind | Plan |
 |---|---|---|
 | The seeded "long conversation" fits in ~3k tokens, so no message is ever dropped from context: context management is never actually exercised | test-data gap | addressed by BUG-3: old sessions are now provably out of scope (`messages_out_of_scope`), and trimming within a session is tested with 500 messages; a long-session eval follows in Phase 8 |
-| PydanticAI's startup banner prints in the chat | UX | set `PYDANTIC_AI_NO_BANNER=1` |
-| No "working…" indicator during a 5–15 s turn, so the user types ahead; those keystrokes echo into the output and are sent as the next messages | UX | print a working line before each run |
+| PydanticAI's startup banner prints in the chat | UX | done: the chat sets `PYDANTIC_AI_NO_BANNER=1` unless already set |
+| No "working…" indicator during a 5–15 s turn, so the user types ahead; those keystrokes echo into the output and are sent as the next messages | UX | done: a "working…" line prints before each run |
 
 <!-- Template
 ## N. <short title>

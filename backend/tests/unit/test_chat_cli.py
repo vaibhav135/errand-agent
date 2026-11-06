@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
@@ -124,6 +125,26 @@ async def test_ctrl_d_ends_the_chat_quietly(services: Services) -> None:
     terminal = Terminal()  # EOF straight away
 
     await chat(services, terminal, ScriptedModel())  # returns instead of raising
+
+
+async def test_a_working_line_shows_before_each_reply(services: Services) -> None:
+    terminal = Terminal("hi")
+
+    await chat(services, terminal, ScriptedModel([say("Hello!")]))
+
+    assert terminal.out.index("working…") < terminal.out.index("Hello!")
+
+
+def test_the_pydantic_ai_banner_is_off(
+    app_settings: Settings, app_clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("PYDANTIC_AI_NO_BANNER", raising=False)
+    keyed = app_settings.model_copy(update={"anthropic_api_key": SecretStr("sk-ant-test")})
+    terminal = Terminal()
+
+    main(settings=keyed, clock=app_clock, read=terminal.read, write=terminal.write)
+
+    assert os.environ["PYDANTIC_AI_NO_BANNER"] == "1"
 
 
 async def test_unknown_commands_never_reach_the_model(services: Services) -> None:

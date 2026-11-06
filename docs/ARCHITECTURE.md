@@ -148,7 +148,9 @@ services directly run the app lifespan in their own loop (`app.router.lifespan_c
   the run's `run_finished` event: outcome · model calls · tokens · cost · seconds ·
   trace file path (dimmed only on a real terminal). No model configured → what to set,
   exit code 2. Anything starting with `/` is a chat command handled locally (`/quit`,
-  `/exit`; others get "Unknown command"), never sent to the model or saved (BUG-4).
+  `/exit`; others get "Unknown command"), never sent to the model or saved (BUG-4). A
+  "working…" line shows while a turn runs, and PydanticAI's startup banner is off
+  (`PYDANTIC_AI_NO_BANNER=1` unless already set).
 
 ### Migrations: `store/migrate.py`
 - **What:** `migrate(conn, directory, clock)` applies `NNNN_name.sql` files in order.
