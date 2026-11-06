@@ -16,8 +16,11 @@ How:  The model is supplied per run (`agent.run(model=...)` or `agent.override`)
       exactly the definitions the model receives.
 """
 
+from pydantic.json_schema import JsonSchemaValue
 from pydantic_ai import Agent, Tool
 from pydantic_ai.capabilities import ProcessHistory
+from pydantic_ai.tools import GenerateToolJsonSchema
+from pydantic_core import core_schema
 
 from errand_agent.agent.budget import guard_context
 from errand_agent.agent.deps import AgentDeps
@@ -29,8 +32,30 @@ FORBIDDEN_TOOL_NAMES = frozenset(
 )
 
 
+class LeanToolJsonSchema(GenerateToolJsonSchema):
+    """Tool schemas without the optional-parameter boilerplate (docs/DECISIONS.md, D3).
+
+    `area: str | None = None` is written as `{"type": "string"}` and left out of
+    `required`, instead of `{"anyOf": [{"type": "string"}, {"type": "null"}],
+    "default": null}`: "not required" already tells the model it may omit it, and the
+    `null` branch cost ~40 tokens per parameter on every request. Only the JSON shown
+    to the model changes; validation still uses the function's real types, so a
+    `null` the model sends anyway is still accepted. A test pins every tool's
+    parameter names, types and required flags.
+    """
+
+    def nullable_schema(self, schema: core_schema.NullableSchema) -> JsonSchemaValue:
+        return self.generate_inner(schema["schema"])
+
+    def default_schema(self, schema: core_schema.WithDefaultSchema) -> JsonSchemaValue:
+        json_schema = super().default_schema(schema)
+        if "default" in json_schema and json_schema["default"] is None:
+            del json_schema["default"]
+        return json_schema
+
+
 def orchestrator_tools() -> list[Tool[AgentDeps]]:
-    return [Tool(fn, takes_ctx=True) for fn in ALL_TOOLS]
+    return [Tool(fn, takes_ctx=True, schema_generator=LeanToolJsonSchema) for fn in ALL_TOOLS]
 
 
 def build_orchestrator() -> Agent[AgentDeps, str]:

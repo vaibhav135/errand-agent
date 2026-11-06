@@ -586,8 +586,8 @@ User information comes in three kinds, kept in three places:
   after BUG-3). Filled in priority order:
 
 ```
-1. tool definitions (16 schemas) + the provider's         always  ~3,270 estimated
-   hidden tool-use prompt                                         (~3,040 real)
+1. tool definitions (16 schemas) + the provider's         always  ~2,860 estimated
+   hidden tool-use prompt                                         (~2,630 real)
 2. system prompt                                          always
 3. state: today (IST), errand kind/state, requirements,   always  (structured, from the DB,
    still needed / ask once, pending approval,                     so old turns can be
@@ -796,7 +796,12 @@ stateDiagram-v2
   `agent_tool` event (`agent/tool_trace.py`, a `wrap_tool_execute` capability): the
   arguments as the model sent them, the result, status ok / retry / error and latency;
   for `update_profile` / `add_address` only argument *names*, since their values are
-  PII. Tests drive the agent offline with a scripted `FunctionModel`
+  PII. **Lean definitions** (D3): tool schemas ship with every request, so
+  `LeanToolJsonSchema` writes an optional `x: T | None = None` as plain `T` (not
+  required) instead of an `anyOf` with a `null` branch, and descriptions stay short
+  (rules live in the system prompt); validation still uses the real types. A test pins
+  every tool's parameter names, types and required flags, and caps the total
+  (2,719 -> 2,310 real tokens). Tests drive the agent offline with a scripted `FunctionModel`
   and assert database effects. Note for PydanticAI 2.66: a tool's `ModelRetry` is recorded
   as a `ToolReturnPart` with `outcome="retried"`, not a `RetryPromptPart`.
 

@@ -100,9 +100,8 @@ async def update_requirements(
     no_budget: bool = False,
     preferred_provider_id: str | None = None,
 ) -> dict[str, Any]:
-    """Record what the user wants for a booking. Pass only what the user said (or
-    corrected) this turn; everything else is kept. Dates are calendar dates in IST.
-    Use no_time_preference / no_budget when the user says they have none."""
+    """Record booking details the user gave or corrected this turn (the rest are kept).
+    Dates are in IST. Set no_time_preference / no_budget if they have none."""
     deps = ctx.deps
     errand = _book_errand(deps, create=True)
     assert errand is not None
@@ -159,8 +158,7 @@ async def update_requirements(
 
 
 async def search_and_compare(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
-    """Search providers for the current booking request and return the top options,
-    ranked by code (budget and time window applied). Call once requirements are complete."""
+    """Search and rank providers for the current request, once requirements are complete."""
     deps = ctx.deps
     errand = _book_errand(deps, create=False)
     if errand is None:
@@ -242,9 +240,8 @@ async def propose_booking(
 
 
 async def decline_pending(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
-    """The user doesn't want what's waiting for their approval ("no", "leave it",
-    "too pricey, skip it"). Withdraws every pending approval card; nothing is booked or
-    changed. Use it only when the user is declining."""
+    """The user declined what awaits their approval: withdraws every pending card.
+    Nothing is booked or changed."""
     deps = ctx.deps
     declined = decline(deps.conn, deps.approvals, deps.errands, deps.session_id, run=deps.run)
     if not declined:
@@ -263,8 +260,8 @@ async def decline_pending(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
 
 
 async def get_reviews_summary(ctx: RunContext[AgentDeps], provider_id: str) -> dict[str, Any]:
-    """What reviewers say about a provider, as labels only (themes, red flags,
-    sentiment). Raw review text is never shown to you; red flags are warnings to pass on."""
+    """A provider's reviews as labels (themes, red flags, sentiment). Pass red flags on
+    to the user as warnings."""
     deps = ctx.deps
     if deps.review_model is None:
         return {"status": "reviews_unavailable"}
@@ -443,11 +440,9 @@ def _personal(m: Memory) -> bool:
 async def list_memories(
     ctx: RunContext[AgentDeps], include_personal_notes: bool = False
 ) -> dict[str, Any]:
-    """What I remember about the user: preferences that matter for bookings (time
-    window, budgets, providers, address, home-service notes), how many personal notes
-    there are (set include_personal_notes to list them, only when the user asks), and
-    how many suggestions await their review. You never see a suggestion's content;
-    call show_suggestions to have it shown to the user."""
+    """The user's saved booking preferences, how many personal notes there are (set
+    include_personal_notes to list them, only if asked) and how many suggestions await
+    their review."""
     remembered = ctx.deps.memories.list_for_user(ctx.deps.user_id)
     active = [m for m in remembered if m.status == "active"]
     sent = [m for m in active if include_personal_notes or not _personal(m)]
@@ -474,9 +469,8 @@ async def list_memories(
 
 
 async def show_suggestions(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
-    """Show the user the suggestions awaiting their review. They're displayed to the
-    user directly, with buttons / commands to confirm or reject each; you only learn
-    how many were shown. Don't describe them yourself."""
+    """Show the user their pending suggestions to confirm or reject. You learn only how
+    many were shown."""
     deps = ctx.deps
     pending = [
         m for m in deps.memories.list_for_user(deps.user_id) if m.status == "pending_confirmation"
