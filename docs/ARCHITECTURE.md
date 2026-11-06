@@ -153,7 +153,8 @@ services directly run the app lifespan in their own loop (`app.router.lifespan_c
   `/reject N` decide one, in code (D2); suggestions a tool asked to show are drawn in a
   box after the reply, like an approval card. A
   "working…" line shows while a turn runs, and PydanticAI's startup banner is off
-  (`PYDANTIC_AI_NO_BANNER=1` unless already set).
+  (`PYDANTIC_AI_NO_BANNER=1` unless already set). Ctrl+C leaves quietly, even mid-turn;
+  a side effect in flight is settled by the reconcile pass at the next start.
 
 ### Migrations: `store/migrate.py`
 - **What:** `migrate(conn, directory, clock)` applies `NNNN_name.sql` files in order.

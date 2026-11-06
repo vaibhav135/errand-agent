@@ -22,6 +22,8 @@ How:  - Standard library only: `input()` with `readline` imported gives line edi
         (docs/DECISIONS.md, D2); a tool can ask for them to be shown after a reply.
       - A "working…" line shows while a turn runs (seconds, with a live model), and
         PydanticAI's startup banner is turned off unless the user set it themselves.
+      - Ctrl+C or Ctrl+D leaves quietly, also in the middle of a turn: a side effect
+        that was in flight is settled by the reconcile pass at the next start.
       - Default models in use -> a notice first; a missing key -> what to set, exit 2.
 """
 
@@ -216,7 +218,13 @@ def main(
         except ModelNotConfigured as exc:
             write(f"Can't start the chat: {exc}")
             return 2
-        asyncio.run(_start(services, handler, read, write, styled))
+        try:
+            asyncio.run(_start(services, handler, read, write, styled))
+        except KeyboardInterrupt:  # Ctrl+C during a turn (at the prompt it's handled above)
+            write(
+                "\nInterrupted. Anything that was in progress is checked with the provider"
+                " the next time you start, so nothing is booked twice."
+            )
         return 0
     finally:
         services.close()
