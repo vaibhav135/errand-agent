@@ -8,6 +8,7 @@ from errand_agent.core.clock import FakeClock
 from errand_agent.core.config import Settings
 from errand_agent.providers.models import DateRange, SearchOk
 from errand_agent.store.db import connect
+from errand_agent.store.migrate import migrations_for
 
 
 def services(app: FastAPI) -> Services:
@@ -22,15 +23,10 @@ def test_startup_creates_and_migrates_both_databases(
 
     agent = connect(app_settings.agent_db_path)
     mock = connect(app_settings.mock_db_path)
-    assert [r[0] for r in agent.execute("SELECT version FROM schema_migrations")] == [1]
-    assert [r[0] for r in mock.execute("SELECT version FROM schema_migrations")] == [
-        1,
-        2,
-        3,
-        4,
-        5,
-        6,
-    ]
+    for conn, db in ((agent, "agent"), (mock, "mock_world")):
+        applied = [r[0] for r in conn.execute("SELECT version FROM schema_migrations")]
+        packaged = [f for f in migrations_for(db).iterdir() if f.name.endswith(".sql")]  # type: ignore[arg-type]
+        assert len(applied) == len(packaged) > 0, db
     tables = {r[0] for r in agent.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert "sessions" in tables
 

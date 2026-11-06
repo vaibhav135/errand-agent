@@ -29,9 +29,13 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 ## Phase 3 — Workflow core
 - [x] First `agent.db` migration; create + migrate `agent.db` at app startup
 - [x] Requirements model: missing / ask-once fields, correction merge, date checks
-- [ ] State model + explicit transitions
+- [x] State model + explicit transitions (tables per kind, history, generated diagrams)
+- [ ] Filtering + deterministic ranking of search results
 - [ ] Approval gate: approval bound to hash(action, provider, slot, price); invalidated on change
+- [ ] `GuardedToolEnv`: traced provider calls + per-run limits
 - [ ] Booking executor: persisted idempotency key, timeout → `get_booking_status`, no duplicate bookings
+- [ ] Reconciler: startup pass + 30 s background loop + per-run check; resolves `unverified`;
+      retries `cancel_pending` until min(15 min after approval, 1 h before the visit), then `cancel_failed`
 - [ ] Cancel / reschedule with bounded retries
 - [ ] Hard limits: model turns, tool calls, wall-clock; every exit has a user-facing outcome
 
