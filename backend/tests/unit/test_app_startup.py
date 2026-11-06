@@ -37,7 +37,7 @@ def test_startup_creates_and_migrates_both_databases(
 
 # Tests that use services directly run the lifespan in *this* event loop: TestClient
 # runs the app in another thread, and SQLite connections are bound to the thread that
-# created them (a guard we keep on purpose; see docs/ARCHITECTURE.md).
+# created them (a guard we keep on purpose; see docs/COMPONENTS.md, "Database").
 
 
 async def test_services_are_available_while_running(

@@ -13,7 +13,7 @@ Why:  The assignment needs a trace per run (transitions, model calls, tools and
 
 How:  - Envelope per event: ts, run_id, session_id, seq, type, then the payload.
         Event types are a fixed set; payload keys may not shadow the envelope.
-      - Lifecycle (full definition: docs/ARCHITECTURE.md, "Run lifecycle"):
+      - Lifecycle (full definition: docs/COMPONENTS.md, "Run lifecycle"):
         `run_started` on start; `finish(outcome)` emits `run_finished`
         once, then the run is closed (later emits raise). As a context manager,
         an escaping exception records outcome "error" and re-raises; leaving

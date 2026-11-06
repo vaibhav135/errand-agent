@@ -1,12 +1,13 @@
 # Design decisions
 
 Decisions that changed or extended the design, with the reasoning and what was rejected.
-`ARCHITECTURE.md` describes how the code works today; this file records *why* it is
+`ARCHITECTURE.md` (the map) and `COMPONENTS.md` (the detail) describe how the code
+works today; this file records *why* it is
 shaped that way when the choice wasn't obvious. Newest last.
 
 ## D1. Context: session-scoped history, a budget that counts everything (2026-11-06)
 
-**Status:** implemented by the BUG-3 fix. How it works now: ARCHITECTURE.md, "Context
+**Status:** implemented by the BUG-3 fix. How it works now: COMPONENTS.md, "Context
 builder" (the budget split: tools ~3,270 incl. the hidden tool prompt, system, state, memories ≤600, working room
 1,500, then this session's messages) and "Context guard" (in-run masking).
 
@@ -81,7 +82,7 @@ reach the user instead is decided in D2.
 
 ## D2. Suggestions reach the user through code, never through the model (2026-11-06)
 
-**Status:** implemented by the BUG-5 fix (ARCHITECTURE.md, "Agent tools" and "Chat
+**Status:** implemented by the BUG-5 fix (COMPONENTS.md, "Agent tools" and "Chat
 CLI"); the web UI's memory panel adds Confirm / Reject buttons in Phase 6.
 
 **Trigger:** BUG-5. In the first live chat the model listed the two pending suggestions

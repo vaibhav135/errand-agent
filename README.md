@@ -139,7 +139,8 @@ approval*.
 
 | | |
 |---|---|
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | every component: what, why, how |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | the map: one turn step by step, each component's guarantee, the state machine |
+| [docs/COMPONENTS.md](docs/COMPONENTS.md) | every component in detail: what, why, how |
 | [docs/DECISIONS.md](docs/DECISIONS.md) | design decisions D1–D7, with the evidence behind them |
 | [BUGS.md](BUGS.md) | 12 real bugs: what broke, why, the fix, the regression test |
 | [evals/results.md](evals/results.md) | the generated eval table |

@@ -44,7 +44,7 @@ def connect(path: Path, *, busy_timeout_ms: int = 5000) -> sqlite3.Connection:
 
 # Callbacks to run after the current transaction commits, per connection. Keyed by
 # id(): sqlite3.Connection accepts no attributes, and each connection is used from one
-# thread only (see the thread rule in docs/ARCHITECTURE.md).
+# thread only (see the thread rule in docs/COMPONENTS.md, "Database").
 _after_commit: dict[int, list[Callable[[], None]]] = {}
 
 
