@@ -12,7 +12,7 @@ listed at the end.
 | 3 | The context budget isn't a cap | high | fixed |
 | 4 | Slash commands leak to the model | low | fixed |
 | 5 | The agent's own tool calls aren't traced | medium | fixed |
-| 6 | An inference can contradict an explicit preference | medium | open |
+| 6 | An inference can contradict an explicit preference | medium | fixed |
 
 ## 1. Rollback masked the real database error
 - **What broke:** When a write failed in a way that makes SQLite end the transaction
@@ -121,7 +121,7 @@ listed at the end.
 - **Commits:** repro `584f1b8` · fix `055cc84`
 
 ## 6. An inference can contradict an explicit preference
-- **Status:** open
+- **Status:** fixed
 - **What broke:** run over the demo user's booking history, the inference rules suggest
   "earliest start 09:00" (three old bookings started at 9:00), although the user
   explicitly said "never before 10am" 40 days ago. The store would save it as a pending
@@ -132,9 +132,12 @@ listed at the end.
   for a key the user stated explicitly isn't blocked, so explicit doesn't beat inferred.
 - **How found:** writing the BUG-2 consistency test, which runs the real rules over the
   seeded history.
-- **Fix:** -
-- **Regression test:** -
-- **Commits:** -
+- **Fix:** explicit beats inferred: `propose_inferred` skips a suggestion when the user
+  has an active explicit fact for the same key and scope (notes excepted, since they
+  coexist). The seeded user is now a fixed point of inference.
+- **Regression test:** `backend/tests/unit/test_memory_inference.py::test_an_explicit_preference_blocks_a_different_inference`,
+  `::test_the_seeded_user_is_a_fixed_point_of_inference`
+- **Commits:** repro `32174f3` · fix `e7997da`
 
 ## Not bugs: follow-ups found alongside
 
