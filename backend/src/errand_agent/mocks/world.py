@@ -149,6 +149,9 @@ class MockWorld:
         seed_world(conn, clock, user_id=user_id)
         return cls(conn, clock=clock, ids=ids, scenario=scenario, user_id=user_id)
 
+    def close(self) -> None:
+        self._conn.close()
+
     # --- search_providers -----------------------------------------------------------
 
     async def search_providers(

@@ -68,3 +68,10 @@ class Settings(BaseSettings):
             for field, name in _DERIVED.items():
                 data.setdefault(field, root / name)
         return data
+
+
+def load_settings() -> Settings:
+    """Settings from the environment / .env (what the running app uses)."""
+    # The derived paths are filled by `_derive_paths` before validation, which a
+    # static type checker can't see, so the no-argument call looks incomplete to it.
+    return Settings()  # pyright: ignore[reportCallIssue]

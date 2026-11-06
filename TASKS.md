@@ -27,7 +27,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] `MockControl.cancel_by_provider` (simulated provider event for Phase 6)
 
 ## Phase 3 — Workflow core
-- [ ] First `agent.db` migration; create + migrate `agent.db` at app startup
+- [x] First `agent.db` migration; create + migrate `agent.db` at app startup
 - [ ] State model + explicit transitions
 - [ ] Approval gate: approval bound to hash(action, provider, slot, price); invalidated on change
 - [ ] Booking executor: persisted idempotency key, timeout → `get_booking_status`, no duplicate bookings

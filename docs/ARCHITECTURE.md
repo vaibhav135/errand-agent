@@ -102,6 +102,24 @@ reading the environment would silently miss keys that live in `.env`.
   `transaction()` uses `BEGIN IMMEDIATE` so the write lock is taken at BEGIN, and rolls
   back only if SQLite hasn't already ([BUG-1](../BUGS.md)).
 
+**Thread rule:** SQLite connections are bound to the thread that created them
+(`check_same_thread`, kept on deliberately). All database work happens on the event-loop
+thread: route handlers that touch services must be `async def` (FastAPI runs sync
+handlers in a thread pool). Turning the guard off would let two threads interleave
+transactions on one connection; with it on, a mistake fails loudly. Tests that use
+services directly run the app lifespan in their own loop (`app.router.lifespan_context`).
+
+### App wiring: `api/app.py`
+- **What:** `create_app(settings, clock=, ids=)`; its lifespan builds `Services`
+  (settings, clock, ids, `agent.db` connection, mock world, tracer) on
+  `app.state.services` and closes them on shutdown.
+- **Why:** the one place where concrete implementations are chosen; every other layer
+  receives a `Clock`, `ToolEnv`, `Tracer` instead of building one, so tests inject a
+  `FakeClock` and temp paths.
+- **How:** startup migrates `agent.db` and opens the mock world (migrated and seeded
+  once); restarts reuse the same files. The dev server uses env/`.env` settings, the
+  system clock and random ids.
+
 ### Migrations: `store/migrate.py`
 - **What:** `migrate(conn, directory, clock)` applies `NNNN_name.sql` files in order.
 - **Why:** Reproducible schemas for `agent.db` and `mock_world.db`. Alembic would bring
