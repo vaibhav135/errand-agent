@@ -77,7 +77,8 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 |---|---|
 | `ERRAND_DATA_DIR` | `var` (relative to `backend/`, where `make` runs) |
 | `ERRAND_AGENT_DB_PATH` / `ERRAND_MOCK_DB_PATH` / `ERRAND_TRACE_DIR` | under `data_dir` |
-| `ERRAND_MODEL` | unset (e.g. `anthropic:claude-sonnet-5-5`) |
+| `ERRAND_MODEL` | unset (e.g. `anthropic:claude-opus-5-5`; `test` = offline TestModel) |
+| `ERRAND_REVIEW_MODEL` | unset = same as `ERRAND_MODEL` (e.g. `anthropic:claude-haiku-5-5`) |
 | `ERRAND_MOCK_SEED` | `42` |
 | `ERRAND_MAX_MODEL_TURNS` / `ERRAND_MAX_TOOL_CALLS` / `ERRAND_MAX_RUN_SECONDS` | `8` / `20` / `60` (per-run hard limits) |
 | `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
@@ -667,6 +668,18 @@ stateDiagram-v2
     cancel_failed --> [*]
     abandoned --> [*]
 ```
+
+### Agent models: `agent/models.py`
+- **What:** `main_model(settings)` / `review_model(settings)` build the PydanticAI model
+  from `ERRAND_MODEL` / `ERRAND_REVIEW_MODEL` (`<provider>:<model>`).
+- **Why:** keys in `backend/.env` reach the provider only if passed explicitly
+  (pydantic-settings doesn't export them), and a missing key should fail early, naming
+  the variable to set.
+- **How:** `anthropic:` → `AnthropicModel`; `openai:` / `openai-responses:` →
+  `OpenAIResponsesModel`; `openai-chat:` → `OpenAIChatModel`; `google:` → a clear "SDK not
+  installed" error; `test` → PydanticAI's offline `TestModel`. The review reader defaults
+  to the main model. The test suite sets `ALLOW_MODEL_REQUESTS = False`, so no test can
+  call a real API.
 
 ## Run lifecycle
 

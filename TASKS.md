@@ -53,10 +53,13 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Seed ≥50 memories + long prior conversation (deterministic generator, `make seed-data`)
 
 ## Phase 5 — Agent
-- [ ] Per-run reconcile check (`reconcile_once(session_id=...)`) at the start of each user run
-- [ ] PydanticAI orchestrator + tool wrappers (model configurable via env)
-- [ ] Quarantined review-reader sub-agent (no tools; typed summary only)
-- [ ] Chat-history persistence (`ModelMessagesTypeAdapter`)
+- [x] Model factory: ERRAND_MODEL / ERRAND_REVIEW_MODEL, keys passed explicitly, clear errors
+- [ ] Agent tools = workflow commands only (no book / cancel / approve tools), FunctionModel-tested
+- [ ] Quarantined review reader: no tools, fixed-list fields only (no free text)
+- [ ] Run loop via `agent.iter`: turn budget, `model_call` traces with tokens and cost
+- [ ] Message handler: per-run reconcile, typed yes/no in code (no LLM), context → history,
+      persistence (our `messages` table, not PydanticAI's history), outcome
+- [ ] `make chat` CLI for live testing; live smoke test (skipped without a key)
 
 ## Phase 6 — Proactive follow-up
 - [ ] Simulated provider-cancellation event + monitor

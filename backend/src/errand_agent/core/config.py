@@ -51,6 +51,8 @@ class Settings(BaseSettings):
     # PydanticAI model string, e.g. "anthropic:claude-sonnet-5-5". None until chosen;
     # the agent refuses to start without it rather than silently picking one.
     model: str | None = None
+    # Model for the quarantined review reader; defaults to `model` (e.g. a cheaper Haiku).
+    review_model: str | None = None
     mock_seed: int = 42
 
     # Hard per-run limits (one run = one inbound event handled end to end).
