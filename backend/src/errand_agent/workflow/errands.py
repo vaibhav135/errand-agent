@@ -106,6 +106,7 @@ _BOOK: Table = {
     ("verifying", "confirmed"): "booked",
     ("verifying", "retry"): "booking",
     ("verifying", "unverifiable"): "unverified",
+    ("verifying", "not_booked"): "comparing",
     ("unverified", "confirmed"): "booked",
     ("unverified", "not_booked"): "comparing",
 }
@@ -273,6 +274,14 @@ class ErrandStore:
             (errand_id,),
         ).fetchall()
         return [tuple(r) for r in rows]  # type: ignore[misc]
+
+    def set_booking(self, errand_id: str, booking_id: str) -> Errand:
+        with atomic(self._conn):
+            self._conn.execute(
+                "UPDATE errands SET booking_id = ?, updated_at = ? WHERE errand_id = ?",
+                (booking_id, utc_text(self._clock.now()), errand_id),
+            )
+        return self.get(errand_id)
 
     def set_hold(self, errand_id: str, hold_id: str, expires_at: datetime) -> Errand:
         with atomic(self._conn):

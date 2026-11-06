@@ -350,16 +350,42 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
   "click to approve" links in email or SMS.
 
 ### Booking flow: `workflow/booking.py`
-- **What:** `BookingFlow.propose(errand, option, slot)` (execute: next commit).
-- **Why:** the model never books; it can only propose. A proposal becomes a provider
-  hold plus a pending approval, and only the user's approval can lead to a booking.
-- **How:** preconditions (a book errand in `comparing`) are checked before calling the
-  provider, so a wrong-state call places no hold. The hold is placed first, then the
-  errand's hold, the approval request and the `option_proposed` transition are saved in
-  one `atomic` unit (if those writes failed, the provider hold simply expires). The
-  approval carries the **quoted** price; when it differs from the search price,
-  `price_changed_from` lets the approval card say so. An unavailable slot leaves the
-  errand in `comparing` with no approval.
+- **What:** `BookingFlow.propose(errand, option, slot)` and
+  `BookingFlow.execute(errand, approval)`; provider side effects are recorded in
+  `provider_actions` ([actions.py](../backend/src/errand_agent/workflow/actions.py)).
+- **Why:** the model never books; it can only propose. Only the user's approval can lead
+  to a booking, and a booking is made exactly once and never claimed until verified.
+- **How (propose):** preconditions are checked before calling the provider, so a
+  wrong-state call places no hold. The hold is placed, then the errand's hold, the
+  approval request and `option_proposed` are saved in one `atomic` unit (if those writes
+  failed, the provider hold simply expires). The approval carries the **quoted** price;
+  `price_changed_from` tells the user when it differs from the search price.
+- **How (execute):**
+
+```
+1. hold freshness   expires within 30 s → re-hold
+                      same price → continue (fingerprint excludes hold_id)
+                      new price  → fresh approval            → needs_reapproval
+                      slot gone  → back to comparing         → slot_gone
+2. COMMIT POINT     one atomic unit: consume approval (details must still match)
+                    + provider_action{new idempotency key, in_flight} + approved → booking
+                    budget checked just before; after it, calls are exempt (finish what started)
+3. book(hold, key)  ≤ 3 attempts, always the same key
+                      Booked        → booked
+                      slot_taken    → comparing
+                      hold_expired  → re-hold, fresh approval → needs_reapproval
+                      timeout       → verifying: get_booking_status(key) ≤ 3 checks
+                                        (backoff 1 s, 2 s between failed checks)
+                                        booked     → booked (never re-book)
+                                        not booked → retry same key, else not_booked → comparing
+                                        unreachable→ unverified (parked for the reconciler)
+```
+
+  `provider_actions` is written at the commit point, before the provider is called, so
+  after a crash the reconciler knows exactly which keys may have taken effect. Any other
+  provider error during `book` (e.g. a 503 the contract doesn't produce for `book`)
+  leaves the action `in_flight`, which the reconciler resolves through
+  `get_booking_status(key)`, never by booking again.
 
 ### Errand state machine: `workflow/errands.py`
 - **What:** one transition table per errand kind (`book`, `reschedule`, `cancel`),
@@ -409,6 +435,7 @@ stateDiagram-v2
     verifying --> booked: confirmed
     verifying --> booking: retry
     verifying --> unverified: unverifiable
+    verifying --> comparing: not_booked
     unverified --> booked: confirmed
     unverified --> comparing: not_booked
     collecting --> abandoned: abandon

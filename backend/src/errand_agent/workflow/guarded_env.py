@@ -21,7 +21,8 @@ How:  - Limits are checked *before* a call starts; a call already in flight is n
       - Model turns are charged by the agent loop (Phase 5) on the same meter.
 """
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
 from datetime import date, datetime
 from typing import Any, Literal
 
@@ -80,12 +81,33 @@ class BudgetMeter:
         self._started = clock.monotonic()
         self.tool_calls = 0
         self.model_turns = 0
+        self._committed = 0
 
     def elapsed(self) -> float:
         return self._clock.monotonic() - self._started
 
+    def ensure_room(self, tool: str) -> None:
+        """Raise LimitExceeded now if `tool` could not start, without charging it.
+
+        Used just before a commit point: if the side effect can't start, stop *before*
+        anything is committed rather than after the approval was consumed.
+        """
+        if self.tool_calls >= self._budget.max_tool_calls:
+            self._hit("tool_calls", self.tool_calls, self._budget.max_tool_calls, tool)
+        self._check_time(tool)
+
+    @contextmanager
+    def committed(self) -> Iterator[None]:
+        """Inside this block calls are counted but never blocked: once a side effect
+        is committed, finishing it (retries, status checks) beats stopping half-way."""
+        self._committed += 1
+        try:
+            yield
+        finally:
+            self._committed -= 1
+
     def charge_tool_call(self, tool: str, *, exempt: bool = False) -> None:
-        if not exempt:
+        if not (exempt or self._committed):
             if self.tool_calls >= self._budget.max_tool_calls:
                 self._hit("tool_calls", self.tool_calls, self._budget.max_tool_calls, tool)
             self._check_time(tool)
