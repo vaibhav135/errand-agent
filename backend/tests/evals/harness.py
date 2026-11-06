@@ -67,7 +67,9 @@ class Sim:
         scenario: Scenario | None = None,
         env: Env | None = None,
         budget: RunBudget | None = None,
+        review_model: FunctionModel | None = None,  # the quarantined review reader
     ) -> None:
+        self.review_model = review_model
         # Bookings succeed unless the scenario scripts otherwise: evals are deterministic.
         self.world = World(tmp_path, scenario or Scenario(book_outcomes=["success"] * 5))
         w = self.world
@@ -90,6 +92,7 @@ class Sim:
             env=env or w.mock,
             tracer=self.tracer,
             model=FunctionModel(self.model),
+            review_model=self.review_model,
             budget=self.budget,
         )
 
