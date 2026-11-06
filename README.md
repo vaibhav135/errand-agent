@@ -145,6 +145,7 @@ approval*.
 | [docs/DECISIONS.md](docs/DECISIONS.md) | design decisions D1–D7, with the evidence behind them |
 | [BUGS.md](BUGS.md) | 12 real bugs: what broke, why, the fix, the regression test |
 | [evals/results.md](evals/results.md) | the generated eval table |
+| [transcripts/transcript.md](transcripts/transcript.md) | the AI coding session that built this (redacted; no tool output) |
 | [TASKS.md](TASKS.md) | build plan and progress |
 
 ## Layout
