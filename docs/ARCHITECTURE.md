@@ -472,6 +472,24 @@ User information comes in three kinds, kept in three places:
 - **How:** `recent_for_user` returns the user's messages across sessions, newest first;
   ties within one second keep insertion order.
 
+### Memory selection: `memory/selection.py`, `memory/tokens.py`
+- **What:** `select_memories(memories, service=, budget_tokens=)` → included memories,
+  every excluded one **with its reason**, the rendered text and its token count.
+  `estimate_tokens(text)` = ceil(chars / 3.5).
+- **Why:** "only relevant, current preferences may reach the model; forgotten facts and
+  unconfirmed inferred facts never". Deciding it in code makes it provable per turn.
+- **How:**
+
+| Memory | Decision |
+|---|---|
+| forgotten / pending_confirmation / superseded / rejected | excluded, reason = status |
+| scoped to another service; note not about home services; service-scoped when no service is known yet | excluded, `irrelevant` |
+| active and relevant | included by priority (provider, time window, budget, default address, notes), newest first, while it fits; else `over_budget` |
+
+  Each line says where the fact came from ("you told me" / "inferred, you confirmed").
+  The token estimate is deterministic (offline evals) and pessimistic: English averages
+  about 4 characters per token, so packets built to it stay under the real budget.
+
 ### Run outcomes: `workflow/outcomes.py`
 - **What:** `RunOutcome` (kind, user-facing message, optional booking / approval card),
   mappers `for_execution` / `for_change` / `for_limit` / `for_error`, and

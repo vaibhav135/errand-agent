@@ -46,7 +46,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
       confirmed); inspect / correct / forget (value wiped, tombstone blocks re-inference)
 - [x] `user_profile`: structured PII collected when first needed; never sent to the model
 - [x] `messages` table (conversation history)
-- [ ] Token estimate + relevant-memory selection within budget
+- [x] Token estimate + relevant-memory selection within budget
 - [ ] `ContextBuilder` + per-turn `context_sent` log; tests prove forgotten / pending / PII never sent
 - [ ] Inference rules from booking history (pending only)
 - [ ] Seed ≥50 memories + long prior conversation (deterministic generator)
