@@ -29,8 +29,8 @@ How:  1. Reconcile first: settle this session's parked side effects (unverified
 
 import logging
 import sqlite3
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass, field
 from typing import Literal
 
 from pydantic_ai.models import Model
@@ -81,6 +81,15 @@ def shown_note(shown: Sequence[Memory]) -> str:
         return ""
     n = len(shown)
     return f"\n\n[The app showed the user {n} suggestion{'' if n == 1 else 's'} to review.]"
+
+
+@dataclass
+class Turn:
+    """One turn's listeners, and what code showed the user during it."""
+
+    on_text: Callable[[str], Awaitable[None]] | None = None
+    on_tool: Callable[[str], Awaitable[None]] | None = None
+    shown: list[Memory] = field(default_factory=list)  # suggestions to draw after the reply
 
 
 @dataclass(frozen=True)
@@ -142,7 +151,17 @@ class MessageHandler:
         self._agent = build_orchestrator()
         self._tool_tokens = tool_definition_tokens(orchestrator_tools())  # sent every request
 
-    async def handle(self, *, session_id: str, user_id: str, text: str) -> Reply:
+    async def handle(
+        self,
+        *,
+        session_id: str,
+        user_id: str,
+        text: str,
+        on_text: Callable[[str], Awaitable[None]] | None = None,
+        on_tool: Callable[[str], Awaitable[None]] | None = None,
+    ) -> Reply:
+        """With `on_text` / `on_tool`, a model turn streams its text and announces each
+        tool before it runs (D4); a typed yes / no is decided in code and streams nothing."""
         try:
             await self._reconciler.reconcile_once(session_id=session_id)
         except Exception:  # the background loop retries; don't block the user
@@ -150,13 +169,13 @@ class MessageHandler:
         self._conversation.append(session_id, "user", text)
 
         run_id = ""
-        shown: list[Memory] = []  # suggestions a tool asked code to show the user
+        turn = Turn(on_text=on_text, on_tool=on_tool)
 
         async def body(ctx: RunContext) -> RunOutcome:
             nonlocal run_id
             run_id = ctx.run.run_id
             return await self._respond(
-                ctx, session_id=session_id, user_id=user_id, text=text, shown=shown
+                ctx, session_id=session_id, user_id=user_id, text=text, turn=turn
             )
 
         outcome = await run_with_outcome(
@@ -170,14 +189,14 @@ class MessageHandler:
             body=body,
         )
         self._conversation.append(
-            session_id, "assistant", outcome.message + shown_note(shown), run_id=run_id
+            session_id, "assistant", outcome.message + shown_note(turn.shown), run_id=run_id
         )
-        return Reply(outcome=outcome, run_id=run_id, suggestions=tuple(shown))
+        return Reply(outcome=outcome, run_id=run_id, suggestions=tuple(turn.shown))
 
     # --- the three paths -------------------------------------------------------------
 
     async def _respond(
-        self, ctx: RunContext, *, session_id: str, user_id: str, text: str, shown: list[Memory]
+        self, ctx: RunContext, *, session_id: str, user_id: str, text: str, turn: "Turn"
     ) -> RunOutcome:
         approval_id = self._approvals.resolve_typed_yes(session_id, text)
         if approval_id is not None:
@@ -185,7 +204,7 @@ class MessageHandler:
         if is_explicit_no(text) and self._approvals.pending_for_session(session_id):
             return self._decline(ctx, session_id)
         return await self._converse(
-            ctx, session_id=session_id, user_id=user_id, text=text, shown=shown
+            ctx, session_id=session_id, user_id=user_id, text=text, turn=turn
         )
 
     async def _confirm(self, ctx: RunContext, approval_id: str) -> RunOutcome:
@@ -215,7 +234,7 @@ class MessageHandler:
         return RunOutcome(kind="answered", message=message)
 
     async def _converse(
-        self, ctx: RunContext, *, session_id: str, user_id: str, text: str, shown: list[Memory]
+        self, ctx: RunContext, *, session_id: str, user_id: str, text: str, turn: "Turn"
     ) -> RunOutcome:
         errand = self._errands.latest_open(session_id)
         deps = AgentDeps(
@@ -235,6 +254,7 @@ class MessageHandler:
             meter=ctx.meter,
             review_model=self._review_model,
             result_format=self._result_format,
+            on_tool=turn.on_tool,
             errand_id=errand.errand_id if errand else None,
         )
         ctx.errand_id = deps.errand_id
@@ -260,11 +280,12 @@ class MessageHandler:
                 prompt=text,
                 instructions=text_instructions,
                 history=to_history(messages),
+                on_text=turn.on_text,
             )
         finally:
             ctx.errand_id = deps.errand_id  # so an error reports the errand honestly
 
-        shown.extend(deps.suggestions)
+        turn.shown.extend(deps.suggestions)
         card = self._live_card(deps.cards)
         if card is not None:
             message = reply.strip() or "Please check the details on the card and approve."

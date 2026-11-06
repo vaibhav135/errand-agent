@@ -838,7 +838,11 @@ stateDiagram-v2
   reader's call gets its own `model_call` (tokens taken as the difference on the shared
   usage). PydanticAI's `UsageLimits` sits 3× above our limits as a backstop and is
   converted to `LimitExceeded` if it ever trips. In PydanticAI 2.66 `run.usage` is a
-  property.
+  property. **Streaming** (D4): with `on_text`, each model request is opened with
+  `node.stream(...)` and its visible text (`PartStartEvent` / `TextPartDelta`) passed on
+  chunk by chunk; the returned reply is unchanged, and the budget charge and context
+  guard still run before each request. Tools announce themselves before running through
+  `deps.on_tool` (called by the tool-tracing capability), for progress lines.
 
 ### Message handler: `agent/handler.py`, `agent/prompts.py`
 - **What:** `MessageHandler.handle(session_id=, user_id=, text=)` → `Reply` (a
@@ -874,7 +878,9 @@ user message
   cards are open, goes to the model, which can't approve, so nothing happens without a
   plain yes or a button. A duplicate yes after the booking finds nothing pending and is
   an ordinary message. Two messages in one session at the same time is left to a
-  per-session lock in the API layer.
+  per-session lock in the API layer. `handle(..., on_text=, on_tool=)` streams a model
+  turn's text and announces its tools (D4); a typed or clicked yes / no streams nothing,
+  since no model is involved.
 
   Next turn the model sees only its saved *text*, not what code drew. So when code
   showed suggestions, the saved reply ends with `[The app showed the user N

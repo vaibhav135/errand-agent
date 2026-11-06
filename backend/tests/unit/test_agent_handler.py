@@ -13,6 +13,7 @@ from errand_agent.providers.errors import ProviderTimeout
 from errand_agent.tracing.recorder import Tracer
 from errand_agent.workflow.guarded_env import RunBudget
 from tests.unit.agent_script import ScriptedModel, call, say
+from tests.unit.test_agent_loop import Streaming
 from tests.unit.test_workflow_changes import COOLBREEZE
 from tests.unit.workflow_world import ScriptedEnv, World
 
@@ -230,6 +231,41 @@ async def test_a_limit_ends_with_a_saved_honest_reply(world: World) -> None:
     assert reply.outcome.kind == "limit_reached"
     assert saved(world)[-1] == ("assistant", reply.outcome.message)
     assert run_events(world, reply.run_id, "run_finished")[0]["outcome"] == "limit_reached"
+
+
+# --- streaming (D4) -----------------------------------------------------------------------
+
+
+async def test_a_model_turn_streams_its_text_and_announces_tools(world: World) -> None:
+    model = FunctionModel(stream_function=Streaming(("list_memories", {}), ["Noth", "ing yet."]))
+    seen: list[str] = []
+
+    async def on_text(chunk: str) -> None:
+        seen.append(f"text:{chunk}")
+
+    async def on_tool(name: str) -> None:
+        seen.append(f"tool:{name}")
+
+    reply = await handler(world, model).handle(
+        session_id="sess_1", user_id="user_1", text="hi", on_text=on_text, on_tool=on_tool
+    )
+
+    assert seen == ["tool:list_memories", "text:Noth", "text:ing yet."]
+    assert reply.outcome.message == "Nothing yet."
+
+
+async def test_a_typed_yes_streams_nothing(world: World) -> None:
+    await pending_card(world)
+    seen: list[str] = []
+
+    async def on_text(chunk: str) -> None:
+        seen.append(chunk)
+
+    reply = await handler(world).handle(
+        session_id="sess_1", user_id="user_1", text="yes", on_text=on_text
+    )
+
+    assert reply.outcome.kind == "booked" and seen == []  # decided in code, no model
 
 
 # --- reconcile first ----------------------------------------------------------------------

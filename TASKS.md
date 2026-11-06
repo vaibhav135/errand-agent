@@ -66,7 +66,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
       leaner fixed context (`list_memories`, tool schemas)
 
 ## Phase 6 — API & Web UI (design: docs/DECISIONS.md, D4)
-- [ ] Streaming in the run loop: text deltas and progress lines, tested offline
+- [x] Streaming in the run loop: text deltas and progress lines, tested offline
 - [ ] Sessions + messages endpoints (`POST` answers with an SSE stream), per-session lock
 - [ ] Approval decision endpoint: the button path (`handler.decide`), same as typed yes/no
 - [ ] Memory endpoints (inspect, confirm / reject suggestions, correct, forget) + bookings

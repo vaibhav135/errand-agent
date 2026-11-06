@@ -54,6 +54,8 @@ class TraceAgentTools(AbstractCapability[AgentDeps]):
         args: ValidatedToolArgs,
         handler: WrapToolExecuteHandler,
     ) -> Any:
+        if ctx.deps.on_tool is not None:  # announce it first: a progress line in the UI
+            await ctx.deps.on_tool(call.tool_name)
         run = ctx.deps.run
         if run is None:
             return await handler(args)
