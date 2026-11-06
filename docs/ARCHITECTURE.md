@@ -157,8 +157,9 @@ every environment, not only on a default Mac.
   exit code 2. Anything starting with `/` is a chat command handled locally (`/quit`,
   `/exit`; others get "Unknown command"), never sent to the model or saved (BUG-4).
   `/memories` lists saved facts and the suggestions awaiting review; `/confirm N` /
-  `/reject N` decide one, in code (D2); suggestions a tool asked to show are drawn in a
-  box after the reply, like an approval card. A
+  `/reject N` decide one, in code (D2); hints show a real number ("e.g. /confirm 40"),
+  and a bare `/confirm` lists the choices without deciding anything. Suggestions a tool
+  asked to show are drawn in a box after the reply, like an approval card. A
   "working…" line shows while a turn runs, and PydanticAI's startup banner is off
   (`PYDANTIC_AI_NO_BANNER=1` unless already set). Ctrl+C leaves quietly, even mid-turn;
   a side effect in flight is settled by the reconcile pass at the next start.

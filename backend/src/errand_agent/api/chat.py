@@ -83,37 +83,49 @@ def _origin(m: Memory) -> str:
     return "you told me" if m.source == "explicit" else "inferred, you confirmed"
 
 
+def _pending(items: list[tuple[int, Memory]]) -> list[tuple[int, Memory]]:
+    return [(n, m) for n, m in items if m.status == "pending_confirmation"]
+
+
+def _how_to_decide(n: int) -> str:
+    """With a real number: "/confirm N" got typed literally in a live chat."""
+    return f"e.g. /confirm {n} to save · /reject {n} to dismiss"
+
+
 def render_memories(items: list[tuple[int, Memory]]) -> str:
     saved = [f"  {n}. {describe(m)} ({_origin(m)})" for n, m in items if m.status == "active"]
-    pending = [
-        f"  {n}. {describe(m)} ({m.evidence})"
-        for n, m in items
-        if m.status == "pending_confirmation"
-    ]
+    pending = _pending(items)
     lines = ["Saved:", *(saved or ["  (nothing yet)"])]
     if pending:
-        lines += ["Suggestions from your bookings (/confirm N or /reject N):", *pending]
+        lines.append(f"Suggestions from your bookings ({_how_to_decide(pending[0][0])}):")
+        lines += [f"  {n}. {describe(m)} ({m.evidence})" for n, m in pending]
     return "\n".join(lines)
 
 
 def render_suggestions(items: list[tuple[int, Memory]], shown: Sequence[Memory]) -> str:
     ids = {m.memory_id for m in shown}
-    rows = [f"│ {n}. {describe(m)} ({m.evidence})" for n, m in items if m.memory_id in ids]
+    rows = [(n, m) for n, m in items if m.memory_id in ids]
     return "\n".join(
         [
             _rule("┌─", "Suggestions from your bookings"),
-            *rows,
-            _rule("└─", "/confirm N to save · /reject N to dismiss"),
+            *(f"│ {n}. {describe(m)} ({m.evidence})" for n, m in rows),
+            _rule("└─", _how_to_decide(rows[0][0]) if rows else ""),
         ]
     )
 
 
 def decide_suggestion(memories: MemoryStore, command: str, arg: str) -> str:
     """/confirm N or /reject N: the user decides, in code; the model is never involved."""
-    items = dict(numbered(memories))
-    m = items.get(int(arg)) if arg.strip().isdigit() else None
+    items = numbered(memories)
+    if not arg.strip():  # a bare /confirm: say which ones there are, decide nothing
+        pending = _pending(items)
+        if not pending:
+            return "No suggestions are waiting for your review."
+        choices = " · ".join(f"{n}. {describe(m)}" for n, m in pending)
+        return f"Which one? {choices}  ({command} {pending[0][0]}, for example)"
+    m = dict(items).get(int(arg)) if arg.strip().isdigit() else None
     if m is None or m.status != "pending_confirmation":
-        return f"No suggestion {arg.strip() or '(number missing)'}; see /memories."
+        return f"No suggestion {arg.strip()}; see /memories."
     if command == "/confirm":
         memories.confirm(m.memory_id)
         return f"Saved: {describe(m)}."
