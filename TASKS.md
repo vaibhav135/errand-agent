@@ -44,7 +44,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 ## Phase 4 — Memory & context
 - [x] `memories`: closed typed keys, explicit (verbatim-quote provenance) vs inferred (pending until
       confirmed); inspect / correct / forget (value wiped, tombstone blocks re-inference)
-- [ ] `user_profile`: structured PII collected when first needed; never sent to the model
+- [x] `user_profile`: structured PII collected when first needed; never sent to the model
 - [ ] `messages` table (conversation history)
 - [ ] Token estimate + relevant-memory selection within budget
 - [ ] `ContextBuilder` + per-turn `context_sent` log; tests prove forgotten / pending / PII never sent

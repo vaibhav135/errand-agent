@@ -451,6 +451,19 @@ User information comes in three kinds, kept in three places:
   blocks re-inference. Changes emit a `memory` trace event; a forget event doesn't repeat
   the value.
 
+### Profile: `memory/profile.py`
+- **What:** `ProfileStore`: name, phone, email and labelled addresses (one default), plus
+  `model_view()`.
+- **Why:** contact details are collected once, when first needed, and stored as typed
+  columns. They are also what the `exfiltration` fixture goes after, and the provider
+  contract never needs them, so the model never sees them.
+- **How:** every value must appear in the user's own message (phone digits-only, email
+  and name case-insensitively, address line and area verbatim). Phone is normalised to
+  `+91XXXXXXXXXX`, email lower-cased. `model_view()` exposes only address labels and
+  areas plus has-phone / has-email flags; the UI shows street, number and email straight
+  from the DB. `profile` trace events list changed field names, never values (the
+  sanitizer can't recognise a phone number, so values never enter an event).
+
 ### Run outcomes: `workflow/outcomes.py`
 - **What:** `RunOutcome` (kind, user-facing message, optional booking / approval card),
   mappers `for_execution` / `for_change` / `for_limit` / `for_error`, and
@@ -611,6 +624,7 @@ crashes.
 | `tool_call` | `tool`, `args`, `result`, `status`, `latency_ms`, `error` |
 | `approval` | requested / granted / rejected / invalidated, `approval_id`, fingerprint |
 | `memory` | remembered / suggested / confirmed / rejected / forgotten, key, scope, source, status |
+| `profile` | changed field names only (never values) |
 | `limit_hit`, `error` | which limit / error type and message |
 
 ## Runtime data

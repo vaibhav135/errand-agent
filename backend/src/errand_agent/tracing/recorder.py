@@ -53,6 +53,7 @@ EVENT_TYPES = LIFECYCLE_TYPES | {
     "tool_call",
     "approval",
     "memory",
+    "profile",
     "limit_hit",
     "error",
 }
