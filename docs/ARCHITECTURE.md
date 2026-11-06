@@ -681,6 +681,25 @@ stateDiagram-v2
   to the main model. The test suite sets `ALLOW_MODEL_REQUESTS = False`, so no test can
   call a real API.
 
+### Agent tools: `agent/tools.py`, `agent/deps.py`, `agent/orchestrator.py`
+- **What:** the orchestrator `Agent[AgentDeps, str]` and its tools, all workflow
+  commands: `update_requirements`, `search_and_compare`, `propose_booking`,
+  `find_my_bookings`, `available_slots`, `start_cancel`, `start_reschedule`, `remember`,
+  `list_memories`, `forget_memory`, `confirm_suggestion`, `reject_suggestion`,
+  `correct_memory`, `update_profile`, `add_address`.
+- **Why:** the model understands; the workflow decides. **No tool books, cancels,
+  reschedules, holds or approves** (a structural test lists the tool names); the
+  furthest the model can get is an approval card.
+- **How:** `AgentDeps` bundles one run's stores, the guarded provider env, trace, meter,
+  the user and **their current message** (provenance for `remember` / `update_profile`).
+  Invalid input raises `ModelRetry` with a readable reason (past date, unlisted slot,
+  missing details, a quote the user never said). Options are saved on the errand
+  (`options` column) so "option 2" is stable, and only listed slots can be proposed.
+  Memory and booking tools only touch the user's own records; profile tools return saved
+  field names, never values. Tests drive the agent offline with a scripted `FunctionModel`
+  and assert database effects. Note for PydanticAI 2.66: a tool's `ModelRetry` is recorded
+  as a `ToolReturnPart` with `outcome="retried"`, not a `RetryPromptPart`.
+
 ## Run lifecycle
 
 A **run** is one inbound event handled end to end: a user message, an approval click, or
