@@ -144,6 +144,29 @@ every environment, not only on a default Mac.
   (models and budgets from Settings) for both the chat CLI and the API, so they can't
   drift; it is separate from `build_services` so the app starts without a model key.
 
+### Chat API: `api/chat_routes.py`, `api/events.py`
+- **What:** `POST /api/sessions`; `GET /api/sessions/{id}/messages` (history);
+  `POST /api/sessions/{id}/messages`, which answers with an SSE stream (D4).
+- **Why:** the web UI shows the reply as it is written and the trace as it happens,
+  while each turn stays an ordinary HTTP request (one lock per session, curl-able,
+  testable with the HTTP test client).
+- **How:**
+
+| SSE event | Data | When |
+|---|---|---|
+| `tool` | `{tool}` | just before a tool runs: a progress line |
+| `text` | `{chunk}` | reply text as it arrives |
+| `trace` | the trace event | every event of the session, live |
+| `final` | `{kind, message, approval, booking, suggestions, run_id}` | last: the authoritative reply, from which the UI draws cards |
+
+  The tracer publishes every event to an `EventHub`; a turn's stream subscribes to its
+  session. The turn runs as its own task under `Services.lock_for(session)` (a second
+  message waits); if the client disconnects, the turn still finishes and its reply is
+  saved, since cancelling could interrupt a booking in flight. The handler is built on
+  first use (`Services.handler()`), so the app starts without a key: a turn then
+  answers 503 saying what to set. History hides the code-written "[The app showed…]"
+  note (BUG-8), which is for the model, not the screen.
+
 ### Chat CLI: `api/chat.py` (`make chat`)
 - **What:** a read-reply loop for the demo user over the same handler, databases and
   traces as the web API; `render_card()` draws an approval card.

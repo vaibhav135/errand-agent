@@ -22,6 +22,9 @@ How:  - Startup opens and migrates agent.db, and opens the mock world (migrates 
         budgets from Settings). The chat CLI and the API both use it, so they can't
         drift apart. It is separate from build_services so the app can start without
         a model key; tests pass their own scripted model.
+      - `Services.handler()` builds it on first use; `lock_for(session)` keeps one turn
+        at a time per session; the tracer also publishes to an `EventHub`, which the
+        streaming routes listen to (api/chat_routes.py, D4).
 """
 
 import asyncio
@@ -29,13 +32,15 @@ import contextlib
 import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from fastapi import APIRouter, FastAPI
 from pydantic_ai.models import Model
 
 from errand_agent.agent import models as agent_models
 from errand_agent.agent.handler import MessageHandler
+from errand_agent.api.chat_routes import router as chat_router
+from errand_agent.api.events import EventHub
 from errand_agent.core.clock import Clock, SystemClock
 from errand_agent.core.config import Settings, load_settings
 from errand_agent.core.ids import IdGen, RandomIdGen
@@ -65,6 +70,23 @@ class Services:
     approvals: ApprovalStore
     actions: ProviderActionStore
     reconciler: Reconciler
+    hub: EventHub
+    model: Model | None = None  # a test's scripted model; None = from Settings
+    _handler: MessageHandler | None = None
+    _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
+    # Turns still running after their client left: kept referenced so they finish.
+    background: set[asyncio.Task[None]] = field(default_factory=set)
+
+    def handler(self) -> MessageHandler:
+        """Built on first use, so the app starts without a model key; raises
+        ModelNotConfigured (saying what to set) when no model can be built."""
+        if self._handler is None:
+            self._handler = build_handler(self, model=self.model)
+        return self._handler
+
+    def lock_for(self, session_id: str) -> asyncio.Lock:
+        """One turn at a time per session: a second message waits for the first."""
+        return self._locks.setdefault(session_id, asyncio.Lock())
 
     def close(self) -> None:
         self.world.close()
@@ -79,7 +101,8 @@ def build_services(settings: Settings, clock: Clock, ids: IdGen) -> Services:
     world = MockWorld.open(
         settings.mock_db_path, clock=clock, ids=ids, scenario=Scenario(seed=settings.mock_seed)
     )
-    tracer = Tracer(clock, ids, subscribers=[JsonlWriter(settings.trace_dir)])
+    hub = EventHub()
+    tracer = Tracer(clock, ids, subscribers=[JsonlWriter(settings.trace_dir), hub.publish])
     errands = ErrandStore(agent_db, clock=clock, ids=ids)
     approvals = ApprovalStore(agent_db, clock=clock, ids=ids)
     actions = ProviderActionStore(agent_db, clock=clock)
@@ -93,7 +116,17 @@ def build_services(settings: Settings, clock: Clock, ids: IdGen) -> Services:
         tracer=tracer,
     )
     return Services(
-        settings, clock, ids, agent_db, world, tracer, errands, approvals, actions, reconciler
+        settings=settings,
+        clock=clock,
+        ids=ids,
+        agent_db=agent_db,
+        world=world,
+        tracer=tracer,
+        errands=errands,
+        approvals=approvals,
+        actions=actions,
+        reconciler=reconciler,
+        hub=hub,
     )
 
 
@@ -123,6 +156,7 @@ def create_app(
     *,
     clock: Clock | None = None,
     ids: IdGen | None = None,
+    model: Model | None = None,
 ) -> FastAPI:
     resolved_settings = settings or load_settings()
     resolved_clock = clock or SystemClock()
@@ -131,6 +165,7 @@ def create_app(
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         services = build_services(resolved_settings, resolved_clock, resolved_ids)
+        services.model = model
         app.state.services = services
         # Restart recovery: settle anything left unknown by the previous process.
         await services.reconciler.reconcile_once()
@@ -158,5 +193,6 @@ def create_app(
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    api.include_router(chat_router)
     app.include_router(api)
     return app
