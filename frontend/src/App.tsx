@@ -36,7 +36,7 @@ function App() {
             Chat
           </h2>
           <div className="flex-1 overflow-auto p-4 text-sm text-muted-foreground">
-            Chat pane (Phase 7)
+            Chat pane (Phase 6)
           </div>
         </section>
 
@@ -45,7 +45,7 @@ function App() {
             Trace
           </h2>
           <div className="flex-1 overflow-auto p-4 font-mono text-xs text-muted-foreground">
-            Trace pane (Phase 7)
+            Trace pane (Phase 6)
           </div>
         </section>
       </main>

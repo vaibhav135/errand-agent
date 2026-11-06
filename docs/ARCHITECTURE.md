@@ -26,9 +26,9 @@ the enforcement mechanism. Each layer may import only the layers listed:
 | `mocks/` | `core`, `store`, `providers` (the "external world" knows nothing of the agent) | Phase 2 |
 | `memory/` | `core`, `store`, `tracing`, `providers` (service vocabulary) | Phase 4 |
 | `workflow/` | `core`, `store`, `tracing`, `memory`, `providers` | Phase 3 |
-| `proactive/` | `core`, `store`, `tracing`, `memory`, `providers`, `workflow` | Phase 6 |
+| `proactive/` | `core`, `store`, `tracing`, `memory`, `providers`, `workflow` | Phase 7 |
 | `agent/` | `core`, `store`, `tracing`, `memory`, `providers`, `workflow` | Phase 5 |
-| `api/` | everything | Phase 7 |
+| `api/` | everything | Phase 6 |
 
 If every layer obeys its own list, indirect violations (e.g. `workflow → memory →
 agent`) are impossible too. `proactive` and `agent` don't import each other: the monitor

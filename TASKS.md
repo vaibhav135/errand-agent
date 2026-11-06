@@ -62,15 +62,15 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] `make chat` CLI for live testing (stdlib loop, code-drawn card, per-turn trace footer)
 - [ ] Live smoke test (`make smoke`, skipped without a key, not part of `make test`)
 
-## Phase 6 — Proactive follow-up
-- [ ] Simulated provider-cancellation event + monitor
-- [ ] Notify → replacement search within preferences → fresh approval → rebook
-
-## Phase 7 — API & Web UI
+## Phase 6 — API & Web UI
 - [ ] FastAPI routes: messages, approvals, memories, SSE event stream
 - [ ] ChatPane + ApprovalCard (button + typed "yes")
 - [ ] TracePane (live trace events)
 - [ ] MemoryPanel (inspect / correct / forget)
+
+## Phase 7 — Proactive follow-up
+- [ ] Simulated provider-cancellation event + monitor
+- [ ] Notify → replacement search within preferences → fresh approval → rebook
 
 ## Phase 8 — Evals
 - [ ] Scripted-model harness (`FunctionModel`) + simulated users
