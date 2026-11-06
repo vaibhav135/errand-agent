@@ -11,6 +11,7 @@ export function Workspace({ sessionId }: { sessionId: string | null }) {
   const trace = useTrace(sessionId)
   // Bumped after a turn or a card decision: a booking or memory may have changed.
   const [version, setVersion] = useState(0)
+  const changed = () => setVersion((v) => v + 1)
 
   return (
     <main className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2">
@@ -18,11 +19,11 @@ export function Workspace({ sessionId }: { sessionId: string | null }) {
         <Chat
           sessionId={sessionId}
           onTrace={trace.add}
-          onChanged={() => setVersion((v) => v + 1)}
+          onChanged={changed}
         />
       </section>
       <section aria-label="Side panel" className="flex min-h-0 flex-col">
-        <SidePanel runs={trace.runs} version={version} />
+        <SidePanel runs={trace.runs} version={version} onChanged={changed} />
       </section>
     </main>
   )

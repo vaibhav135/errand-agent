@@ -186,7 +186,8 @@ every environment, not only on a default Mac.
 ### Demo API: `api/demo_routes.py`, `mocks/control.py`
 - **What:** `GET /api/demo` -> `{enabled}`; with `ERRAND_DEMO_MODE=true`, `POST
   /api/demo/next-book` `{outcome}`, `/provider-cancels` `{booking_id}`, `/price-drift`
-  `{provider_id, fraction}`, `/reset`.
+  `{provider_id, fraction}`, `/reset`, and `GET /api/demo/providers` (names for the
+  price picker).
 - **Why:** the demo is "a strong plus if one failure is handled live"; these make the
   provider misbehave on cue (timeout after success, slot taken, a price that changes
   at hold, a provider cancelling), with no restart.
@@ -998,6 +999,12 @@ user message
     Yes") because it also scrubs the conversation. Bookings
     (`src/components/panels/BookingsTab.tsx`): upcoming, then past, from the provider's
     records. Both reload when the chat reports a change (`version`).
+  - Demo (`src/components/panels/DemoTab.tsx`, only when `GET /api/demo` says enabled;
+    `make demo` runs with it on): next booking times out after succeeding / slot taken /
+    fails without booking; a provider cancels one of your upcoming confirmed bookings;
+    a provider's holds quote N% more than search (percent in the UI, a fraction on the
+    wire); Reset. Pickers start empty so nothing fires on a default nobody chose; each
+    action says what it set, and bumps `version` so Bookings reloads.
   - `Workspace` holds one session's chat and side panel and is keyed by session id, so
     a new session starts with a clean chat and trace.
   - Tests: Vitest + Testing Library on jsdom (`vitest.config.ts` reuses the Vite config,

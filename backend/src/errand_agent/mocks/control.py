@@ -17,11 +17,21 @@ How:  The booking becomes `cancelled_by_provider` (freeing its slot) and the eve
       ValueError: this is a test/demo tool, so mistakes should be loud.
 """
 
+from dataclasses import dataclass
+
 from errand_agent.core.clock import utc_text
 from errand_agent.mocks.scenario import _BOOK_CURSOR, BookOutcome  # pyright: ignore[reportPrivateUsage]
 from errand_agent.mocks.world import MockWorld
 from errand_agent.providers.models import Booking
 from errand_agent.store.db import transaction
+
+
+@dataclass(frozen=True)
+class ProviderListing:
+    provider_id: str
+    name: str
+    service: str
+    price_inr: int
 
 
 class MockControl:
@@ -47,6 +57,13 @@ class MockControl:
         if fraction == 0:
             drift.pop(provider_id)
         self._world._scenario = self._world._scenario.model_copy(update={"price_drift": drift})
+
+    def providers(self) -> list[ProviderListing]:
+        """Every provider by name, for the demo's pickers (ids aren't human-friendly)."""
+        rows = self._world._conn.execute(
+            "SELECT provider_id, name, service, price_inr FROM providers ORDER BY service, name"
+        ).fetchall()
+        return [ProviderListing(**dict(row)) for row in rows]
 
     def reset(self) -> None:
         """Back to the scenario the world started with."""

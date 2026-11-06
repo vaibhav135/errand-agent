@@ -137,6 +137,17 @@ export function getDemo(): Promise<{ enabled: boolean }> {
   return json('/api/demo')
 }
 
+export interface ProviderListing {
+  provider_id: string
+  name: string
+  service: string
+  price_inr: number
+}
+
+export function getDemoProviders(): Promise<ProviderListing[]> {
+  return json('/api/demo/providers')
+}
+
 export function demoAction(
   action: 'next-book' | 'provider-cancels' | 'price-drift' | 'reset',
   body?: Record<string, unknown>,

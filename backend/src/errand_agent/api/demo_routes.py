@@ -2,7 +2,8 @@
 
 What: `GET /api/demo` -> {enabled}; with ERRAND_DEMO_MODE=true, `POST /api/demo/
       next-book` {outcome}, `/provider-cancels` {booking_id}, `/price-drift`
-      {provider_id, fraction} and `/reset`.
+      {provider_id, fraction} and `/reset`; `GET /api/demo/providers` lists providers
+      by name for the UI's price picker.
 
 Why:  The assignment's demo is "a strong plus if one failure is handled live, such as
       prompt injection or timeout-after-success". These make the provider side misbehave
@@ -14,6 +15,7 @@ How:  Thin wrappers over MockControl, the mock's control plane, which the agent 
       Misuse (cancelling a booking that isn't confirmed) is a 409 with the reason.
 """
 
+from dataclasses import asdict
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, HTTPException, Request
@@ -51,6 +53,11 @@ def _services(request: Request) -> "Services":
 @router.get("")
 async def demo_status(request: Request) -> dict[str, bool]:
     return {"enabled": request.app.state.services.settings.demo_mode}
+
+
+@router.get("/providers")
+async def providers(request: Request) -> list[dict[str, object]]:
+    return [asdict(p) for p in _services(request).control.providers()]
 
 
 @router.post("/next-book")

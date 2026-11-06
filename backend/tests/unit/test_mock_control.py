@@ -118,6 +118,13 @@ async def test_next_booking_can_lose_the_slot(world: MockWorld, control: MockCon
     assert result.status == "slot_taken"
 
 
+def test_providers_are_listed_by_name(control: MockControl) -> None:
+    providers = {p.provider_id: p for p in control.providers()}
+
+    assert providers["plm_quickfix"].name == "QuickFix Plumbing"
+    assert providers["ac_coolbreeze"].service == "ac_servicing"
+
+
 async def test_a_price_can_change_at_hold_time_and_reset(
     world: MockWorld, control: MockControl
 ) -> None:

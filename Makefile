@@ -1,5 +1,5 @@
 # Dev tasks. Targets are written for GNU Make 3.81 (the macOS default).
-.PHONY: help install dev dev-backend dev-frontend chat test lint format seed-data calibrate build
+.PHONY: help install dev demo dev-backend dev-frontend chat test lint format seed-data calibrate build
 
 BACKEND := backend
 FRONTEND := frontend
@@ -14,6 +14,9 @@ install: ## Install backend (uv) and frontend (bun) dependencies
 # -j2 runs both servers in parallel; Ctrl-C stops both.
 dev: ## Run backend (:8000) and frontend (:5173) together
 	@$(MAKE) -j2 dev-backend dev-frontend
+
+demo: ## Like dev, with the Demo tab (trigger provider failures live)
+	@ERRAND_DEMO_MODE=true $(MAKE) -j2 dev-backend dev-frontend
 
 dev-backend: ## Run FastAPI with reload on :8000
 	cd $(BACKEND) && uv run uvicorn errand_agent.api.app:create_app --factory --reload --port 8000
