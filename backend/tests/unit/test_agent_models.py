@@ -19,6 +19,25 @@ def test_default_models_need_only_the_anthropic_key() -> None:
     assert review_model(s).model_name == "claude-haiku-5-5"
 
 
+def test_no_effort_or_prompt_caching_unless_configured() -> None:
+    m = main_model(settings(ANTHROPIC_API_KEY="sk-ant-test"))
+
+    configured = dict(m.settings or {})
+    assert "anthropic_effort" not in configured  # the API's own default applies
+    assert not configured.get("anthropic_cache_tool_definitions")
+    assert not configured.get("anthropic_cache_instructions")
+
+
+def test_effort_and_prompt_caching_reach_both_anthropic_models() -> None:
+    s = settings(ANTHROPIC_API_KEY="sk-ant-test", effort="low", prompt_cache=True)
+
+    for m in (main_model(s), review_model(s)):
+        configured = dict(m.settings or {})
+        assert configured["anthropic_effort"] == "low"
+        assert configured["anthropic_cache_tool_definitions"] is True
+        assert configured["anthropic_cache_instructions"] is True
+
+
 def test_default_model_without_a_key_names_the_variable() -> None:
     with pytest.raises(ModelNotConfigured, match="ANTHROPIC_API_KEY"):
         main_model(settings())

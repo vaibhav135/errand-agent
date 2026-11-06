@@ -71,7 +71,11 @@ def trace_model_call(
     output_tokens: int,
     latency_s: float,
     estimated_input_tokens: int | None = None,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
 ) -> None:
+    """`input_tokens` is the whole input; the cache counts are the parts of it read from
+    or written to the prompt cache (D5), priced at their own rates."""
     if deps.run is None:
         return
     key = model_key(model)
@@ -82,12 +86,16 @@ def trace_model_call(
             "model": key,
             "input_tokens": input_tokens,
             "estimated_input_tokens": estimated_input_tokens,
+            "cache_read_tokens": cache_read_tokens,
+            "cache_write_tokens": cache_write_tokens,
             "output_tokens": output_tokens,
             "latency_ms": round(latency_s * 1000),
             "cost_usd": estimate_cost(
                 key,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                cache_read_tokens=cache_read_tokens,
+                cache_write_tokens=cache_write_tokens,
                 on=deps.clock.now().astimezone(IST).date(),
             ),
         },
@@ -151,6 +159,8 @@ async def run_agent(
                         output_tokens=usage.output_tokens,
                         latency_s=deps.clock.monotonic() - started,
                         estimated_input_tokens=deps.request_estimate,
+                        cache_read_tokens=usage.cache_read_tokens,
+                        cache_write_tokens=usage.cache_write_tokens,
                     )
             assert run.result is not None
             return run.result.output

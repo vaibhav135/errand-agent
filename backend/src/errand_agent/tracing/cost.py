@@ -33,18 +33,33 @@ class ModelPrice:
     input_per_mtok: float
     output_per_mtok: float
     effective_from: date | None = None
+    # Prompt-cache rates (D5). None = unknown: cached tokens are then priced as normal
+    # input, so a cost is never under-reported.
+    cache_read_per_mtok: float | None = None
+    cache_write_per_mtok: float | None = None
 
 
 def _p(inp: float, out: float, since: date | None = None) -> ModelPrice:
     return ModelPrice(input_per_mtok=inp, output_per_mtok=out, effective_from=since)
 
 
+def _anthropic(inp: float, out: float, *, read: float = 0.1) -> ModelPrice:
+    """Anthropic rates: cache reads at `read` x input (0.1 on most models), 5-minute
+    cache writes at 1.25 x input (prompt-caching reference, checked 2026-11-06)."""
+    return ModelPrice(
+        input_per_mtok=inp,
+        output_per_mtok=out,
+        cache_read_per_mtok=inp * read,
+        cache_write_per_mtok=inp * 1.25,
+    )
+
+
 PRICES: Mapping[str, Sequence[ModelPrice]] = {
     # Anthropic
-    "anthropic:claude-fable-5-1": [_p(10.00, 50.00)],
-    "anthropic:claude-opus-5-5": [_p(4.00, 20.00)],
-    "anthropic:claude-sonnet-5-5": [_p(2.00, 10.00)],
-    "anthropic:claude-haiku-5-5": [_p(0.10, 0.50)],
+    "anthropic:claude-fable-5-1": [_anthropic(10.00, 50.00, read=0.025)],
+    "anthropic:claude-opus-5-5": [_anthropic(4.00, 20.00, read=0.05)],
+    "anthropic:claude-sonnet-5-5": [_anthropic(2.00, 10.00)],
+    "anthropic:claude-haiku-5-5": [_anthropic(0.10, 0.50)],
     # OpenAI (GPT-6 family)
     "openai:gpt-6-astra": [_p(10.00, 50.00)],
     "openai:gpt-6.1-sol": [_p(2.00, 10.00)],
@@ -78,10 +93,23 @@ def estimate_cost(
     input_tokens: int,
     output_tokens: int,
     on: date,
+    cache_read_tokens: int = 0,
+    cache_write_tokens: int = 0,
     prices: Mapping[str, Sequence[ModelPrice]] = PRICES,
 ) -> float | None:
+    """`input_tokens` is the whole input, cache reads and writes included (as PydanticAI
+    reports it); those two parts are priced at their own rates when known."""
     entries = prices.get(_canonical(model))
     price = _price_on(entries, on) if entries else None
     if price is None:
         return None
-    return (input_tokens * price.input_per_mtok + output_tokens * price.output_per_mtok) / 1_000_000
+    read_rate = price.cache_read_per_mtok
+    write_rate = price.cache_write_per_mtok
+    uncached = input_tokens - cache_read_tokens - cache_write_tokens
+    total = (
+        uncached * price.input_per_mtok
+        + cache_read_tokens * (price.input_per_mtok if read_rate is None else read_rate)
+        + cache_write_tokens * (price.input_per_mtok if write_rate is None else write_rate)
+        + output_tokens * price.output_per_mtok
+    )
+    return total / 1_000_000

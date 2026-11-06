@@ -27,6 +27,53 @@ def test_estimate_cost_from_price_table() -> None:
     assert cost("test:flat") == pytest.approx(3.0 + 3.0)  # 1M x $3 + 0.2M x $15
 
 
+def test_cache_reads_and_writes_are_priced_at_their_own_rates() -> None:
+    table = {
+        "test:cached": [
+            ModelPrice(
+                input_per_mtok=2.0,
+                output_per_mtok=10.0,
+                cache_read_per_mtok=0.2,
+                cache_write_per_mtok=2.5,
+            )
+        ]
+    }
+
+    # 1M input tokens in all: 600k read from cache, 100k written to it, 300k uncached.
+    total = estimate_cost(
+        "test:cached",
+        input_tokens=1_000_000,
+        output_tokens=0,
+        cache_read_tokens=600_000,
+        cache_write_tokens=100_000,
+        on=TODAY,
+        prices=table,
+    )
+
+    assert total == pytest.approx(0.3 * 2.0 + 0.6 * 0.2 + 0.1 * 2.5)
+
+
+def test_unknown_cache_rates_price_cached_tokens_as_normal_input() -> None:
+    # Never under-report: without a known discount, a cache read costs full price.
+    with_cache = estimate_cost(
+        "test:flat",
+        input_tokens=1_000_000,
+        output_tokens=200_000,
+        cache_read_tokens=600_000,
+        on=TODAY,
+        prices=TABLE,
+    )
+
+    assert with_cache == cost("test:flat")
+
+
+def test_anthropic_cache_rates_follow_the_published_multipliers() -> None:
+    sonnet = PRICES["anthropic:claude-sonnet-5-5"][-1]
+
+    assert sonnet.cache_read_per_mtok == pytest.approx(0.1 * sonnet.input_per_mtok)
+    assert sonnet.cache_write_per_mtok == pytest.approx(1.25 * sonnet.input_per_mtok)
+
+
 def test_unknown_model_is_none() -> None:
     assert cost("nope:model") is None
 

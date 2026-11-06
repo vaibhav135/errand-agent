@@ -20,7 +20,7 @@ How:  - anthropic:<model> -> AnthropicModel(AnthropicProvider(api_key=...)).
 
 from pydantic import SecretStr
 from pydantic_ai.models import Model
-from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.models.anthropic import AnthropicModel, AnthropicModelSettings
 from pydantic_ai.models.openai import OpenAIChatModel, OpenAIResponsesModel
 from pydantic_ai.models.test import TestModel
 from pydantic_ai.providers.anthropic import AnthropicProvider
@@ -51,7 +51,9 @@ def build_model(spec: str, settings: Settings, *, setting: str) -> Model:
         raise ModelNotConfigured(f"{setting}={spec!r} should look like '<provider>:<model>'")
     if provider == "anthropic":
         key = _key(settings.anthropic_api_key, "ANTHROPIC_API_KEY")
-        return AnthropicModel(name, provider=AnthropicProvider(api_key=key))
+        return AnthropicModel(
+            name, provider=AnthropicProvider(api_key=key), settings=_anthropic_settings(settings)
+        )
     if provider in ("openai", "openai-responses", "openai-chat"):
         key = _key(settings.openai_api_key, "OPENAI_API_KEY")
         cls = OpenAIChatModel if provider == "openai-chat" else OpenAIResponsesModel
@@ -62,6 +64,23 @@ def build_model(spec: str, settings: Settings, *, setting: str) -> Model:
             " pydantic-ai-slim[google] extra first"
         )
     raise ModelNotConfigured(f"unsupported model provider {provider!r} in {setting}")
+
+
+def _anthropic_settings(settings: Settings) -> AnthropicModelSettings:
+    """Effort and prompt caching (D5), applied to every request this model makes.
+
+    Unset effort is left out entirely, so the API's own default applies. Caching marks
+    two breakpoints: after the tool definitions (identical every turn) and after the
+    instructions (stable unless the turn's state or memories change); the API reuses
+    the longest cached prefix it finds.
+    """
+    configured = AnthropicModelSettings()
+    if settings.effort is not None:
+        configured["anthropic_effort"] = settings.effort
+    if settings.prompt_cache:
+        configured["anthropic_cache_tool_definitions"] = True
+        configured["anthropic_cache_instructions"] = True
+    return configured
 
 
 def _key(secret: SecretStr | None, variable: str) -> str:

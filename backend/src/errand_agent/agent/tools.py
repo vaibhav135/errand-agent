@@ -272,16 +272,19 @@ async def get_reviews_summary(ctx: RunContext[AgentDeps], provider_id: str) -> d
     if deps.meter is not None:
         deps.meter.charge_model_turn()  # the reader's call counts toward the run's turns
     # The reader shares this run's usage object, so its own tokens are the difference.
-    before_in, before_out = ctx.usage.input_tokens, ctx.usage.output_tokens
+    u = ctx.usage
+    before = (u.input_tokens, u.output_tokens, u.cache_read_tokens, u.cache_write_tokens)
     started = deps.clock.monotonic()
-    summary = await summarise_reviews(details.provider, model=deps.review_model, usage=ctx.usage)
+    summary = await summarise_reviews(details.provider, model=deps.review_model, usage=u)
     trace_model_call(
         deps,
         agent="review-reader",
         model=deps.review_model,
-        input_tokens=ctx.usage.input_tokens - before_in,
-        output_tokens=ctx.usage.output_tokens - before_out,
+        input_tokens=u.input_tokens - before[0],
+        output_tokens=u.output_tokens - before[1],
         latency_s=deps.clock.monotonic() - started,
+        cache_read_tokens=u.cache_read_tokens - before[2],
+        cache_write_tokens=u.cache_write_tokens - before[3],
     )
     if summary is None:
         return {"status": "reviews_unavailable"}
