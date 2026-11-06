@@ -2,8 +2,8 @@
 
 What: Tool functions over `RunContext[AgentDeps]`: requirements, search & compare,
       propose a booking, decline what's pending, the user's bookings and slots, start a
-      cancel / reschedule, memories (remember / list / forget / confirm / reject /
-      correct) and profile.
+      cancel / reschedule, memories (remember / list / forget / correct / show
+      suggestions) and profile.
 
 Why:  The model understands the user; the workflow decides. There is deliberately no
       tool that books, cancels, reschedules, holds or approves: the model can only
@@ -20,6 +20,9 @@ How:  - Invalid input (a past date, a slot that wasn't listed, a quote the user 
       - Results are plain structured data; facts like "not booked yet" are stated in
         the result rather than left for the model to infer. Profile tools return the
         saved field names, never the values.
+      - Suggestions (inferred, unconfirmed) never reach the model: `list_memories`
+        returns only how many await review, and `show_suggestions` has *code* show
+        them to the user, who confirms or rejects in code (docs/DECISIONS.md, D2).
 """
 
 from datetime import date, datetime, time
@@ -432,19 +435,37 @@ async def remember(
     return {"saved": m.memory_id, "key": m.key, "scope": m.scope}
 
 
-async def list_memories(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]]:
-    """What I remember about the user: saved preferences and suggestions awaiting an answer."""
-    return [
-        {
-            "memory_id": m.memory_id,
-            "key": m.key,
-            "scope": m.scope,
-            "value": m.value.model_dump() if hasattr(m.value, "model_dump") else str(m.value),
-            "source": m.source,
-            "status": m.status,
-        }
-        for m in ctx.deps.memories.list_for_user(ctx.deps.user_id)
+async def list_memories(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
+    """What I remember about the user: their saved preferences, and how many suggestions
+    (inferred from their bookings) await their review. You never see a suggestion's
+    content; call show_suggestions to have it shown to the user."""
+    remembered = ctx.deps.memories.list_for_user(ctx.deps.user_id)
+    return {
+        "saved": [
+            {
+                "memory_id": m.memory_id,
+                "key": m.key,
+                "scope": m.scope,
+                "value": m.value.model_dump() if hasattr(m.value, "model_dump") else str(m.value),
+                "source": m.source,
+            }
+            for m in remembered
+            if m.status == "active"
+        ],
+        "suggestions_awaiting_review": sum(m.status == "pending_confirmation" for m in remembered),
+    }
+
+
+async def show_suggestions(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
+    """Show the user the suggestions awaiting their review. They're displayed to the
+    user directly, with buttons / commands to confirm or reject each; you only learn
+    how many were shown. Don't describe them yourself."""
+    deps = ctx.deps
+    pending = [
+        m for m in deps.memories.list_for_user(deps.user_id) if m.status == "pending_confirmation"
     ]
+    deps.suggestions = pending
+    return {"shown": len(pending)}
 
 
 async def forget_memory(ctx: RunContext[AgentDeps], memory_id: str) -> dict[str, Any]:
@@ -452,26 +473,6 @@ async def forget_memory(ctx: RunContext[AgentDeps], memory_id: str) -> dict[str,
     _own_memory(ctx.deps, memory_id)
     ctx.deps.memories.forget(memory_id, run=ctx.deps.run)
     return {"forgotten": memory_id}
-
-
-async def confirm_suggestion(ctx: RunContext[AgentDeps], memory_id: str) -> dict[str, Any]:
-    """The user agreed with a suggested (inferred) preference."""
-    _own_memory(ctx.deps, memory_id)
-    try:
-        ctx.deps.memories.confirm(memory_id, run=ctx.deps.run)
-    except ValueError as exc:
-        raise ModelRetry(str(exc)) from exc
-    return {"confirmed": memory_id}
-
-
-async def reject_suggestion(ctx: RunContext[AgentDeps], memory_id: str) -> dict[str, Any]:
-    """The user disagreed with a suggested (inferred) preference."""
-    _own_memory(ctx.deps, memory_id)
-    try:
-        ctx.deps.memories.reject(memory_id, run=ctx.deps.run)
-    except ValueError as exc:
-        raise ModelRetry(str(exc)) from exc
-    return {"rejected": memory_id}
 
 
 async def correct_memory(
@@ -558,8 +559,7 @@ ALL_TOOLS = [
     remember,
     list_memories,
     forget_memory,
-    confirm_suggestion,
-    reject_suggestion,
+    show_suggestions,
     correct_memory,
     update_profile,
     add_address,

@@ -16,7 +16,10 @@ How:  - Standard library only: `input()` with `readline` imported gives line edi
       - The card is drawn from the approval's stored details, never from the model's
         text, exactly as the web UI will.
       - Anything starting with "/" is a chat command, handled here: it never reaches
-        the model or the saved conversation (BUG-4).
+        the model or the saved conversation (BUG-4). `/memories` lists what's saved
+        and the suggestions awaiting review; `/confirm N` / `/reject N` decide one.
+        Suggestions are shown and decided only in code, never through the model
+        (docs/DECISIONS.md, D2); a tool can ask for them to be shown after a reply.
       - A "working…" line shows while a turn runs (seconds, with a live model), and
         PydanticAI's startup banner is turned off unless the user set it themselves.
       - Default models in use -> a notice first; a missing key -> what to set, exit 2.
@@ -26,7 +29,7 @@ import asyncio
 import json
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +40,8 @@ from errand_agent.core.clock import Clock, SystemClock
 from errand_agent.core.config import Settings, default_model_notice, load_settings
 from errand_agent.core.ids import RandomIdGen
 from errand_agent.memory.seedgen import DEMO_USER_ID
+from errand_agent.memory.selection import describe
+from errand_agent.memory.store import Memory, MemoryStore
 from errand_agent.workflow.approvals import Approval
 from errand_agent.workflow.outcomes import when
 
@@ -48,6 +53,7 @@ TITLES = {
 }
 DIM, RESET = "\033[2m", "\033[0m"
 QUIT_COMMANDS = ("/quit", "/exit")
+COMMANDS = ("/memories", "/confirm N", "/reject N", "/quit")
 
 
 def _rule(prefix: str, text: str) -> str:
@@ -64,6 +70,53 @@ def render_card(approval: Approval) -> str:
             _rule("└─", 'reply "yes" to approve, "no" to decline'),
         ]
     )
+
+
+def numbered(memories: MemoryStore) -> list[tuple[int, Memory]]:
+    """What the user can inspect, numbered the same way by every command."""
+    return list(enumerate(memories.list_for_user(DEMO_USER_ID), start=1))
+
+
+def _origin(m: Memory) -> str:
+    return "you told me" if m.source == "explicit" else "inferred, you confirmed"
+
+
+def render_memories(items: list[tuple[int, Memory]]) -> str:
+    saved = [f"  {n}. {describe(m)} ({_origin(m)})" for n, m in items if m.status == "active"]
+    pending = [
+        f"  {n}. {describe(m)} ({m.evidence})"
+        for n, m in items
+        if m.status == "pending_confirmation"
+    ]
+    lines = ["Saved:", *(saved or ["  (nothing yet)"])]
+    if pending:
+        lines += ["Suggestions from your bookings (/confirm N or /reject N):", *pending]
+    return "\n".join(lines)
+
+
+def render_suggestions(items: list[tuple[int, Memory]], shown: Sequence[Memory]) -> str:
+    ids = {m.memory_id for m in shown}
+    rows = [f"│ {n}. {describe(m)} ({m.evidence})" for n, m in items if m.memory_id in ids]
+    return "\n".join(
+        [
+            _rule("┌─", "Suggestions from your bookings"),
+            *rows,
+            _rule("└─", "/confirm N to save · /reject N to dismiss"),
+        ]
+    )
+
+
+def decide_suggestion(memories: MemoryStore, command: str, arg: str) -> str:
+    """/confirm N or /reject N: the user decides, in code; the model is never involved."""
+    items = dict(numbered(memories))
+    m = items.get(int(arg)) if arg.strip().isdigit() else None
+    if m is None or m.status != "pending_confirmation":
+        return f"No suggestion {arg.strip() or '(number missing)'}; see /memories."
+    if command == "/confirm":
+        memories.confirm(m.memory_id)
+        return f"Saved: {describe(m)}."
+    memories.reject(m.memory_id)
+    return f"Dismissed: {describe(m)}. I won't suggest it again."
 
 
 def footer(reply: Reply, trace_dir: Path) -> str:
@@ -96,7 +149,8 @@ async def chat_loop(
 ) -> None:
     session_id = services.ids.new("sess")
     services.errands.create_session(session_id, user_id=DEMO_USER_ID)
-    write(f"Errand chat · session {session_id} · /quit or Ctrl-D to leave")
+    memories = MemoryStore(services.agent_db, clock=services.clock, ids=services.ids)
+    write(f"Errand chat · session {session_id} · /memories · /quit or Ctrl-D to leave")
     while True:
         try:
             text = read().strip()
@@ -105,15 +159,23 @@ async def chat_loop(
         if not text:
             continue
         if text.startswith("/"):  # a chat command, never a message to the agent
-            if text in QUIT_COMMANDS:
+            command, _, arg = text.partition(" ")
+            if command in QUIT_COMMANDS:
                 return
-            write(f"Unknown command {text.split()[0]}. Commands: {', '.join(QUIT_COMMANDS)}")
+            if command == "/memories":
+                write(render_memories(numbered(memories)))
+            elif command in ("/confirm", "/reject"):
+                write(decide_suggestion(memories, command, arg))
+            else:
+                write(f"Unknown command {command}. Commands: {', '.join(COMMANDS)}")
             continue
         write(f"{DIM}working…{RESET}" if styled else "working…")  # a turn takes seconds
         reply = await handler.handle(session_id=session_id, user_id=DEMO_USER_ID, text=text)
         write(reply.outcome.message)
         if reply.outcome.approval is not None:
             write(render_card(reply.outcome.approval))
+        if reply.suggestions:  # drawn by code: the model never saw their content
+            write(render_suggestions(numbered(memories), reply.suggestions))
         line = footer(reply, services.settings.trace_dir)
         write(f"{DIM}{line}{RESET}" if styled else line)
 

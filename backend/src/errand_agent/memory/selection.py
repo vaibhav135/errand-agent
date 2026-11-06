@@ -65,6 +65,13 @@ def _relevant(m: Memory, service: str | None) -> bool:
 
 
 def render(m: Memory) -> str:
+    """A memory as the model sees it: the fact and where it came from."""
+    origin = "you told me" if m.source == "explicit" else "inferred, you confirmed"
+    return f"- {describe(m)} ({origin})"
+
+
+def describe(m: Memory) -> str:
+    """The fact alone, in words (e.g. "Usual electrician: Sparks Electricals")."""
     v = m.value
     svc = _SERVICE_LABEL.get(m.scope, m.scope)
     match m.key:
@@ -85,8 +92,7 @@ def render(m: Memory) -> str:
             fact = f"Default address: {v}"
         case "note":
             fact = f"Note: {v}"
-    origin = "you told me" if m.source == "explicit" else "inferred, you confirmed"
-    return f"- {fact} ({origin})"
+    return fact
 
 
 def select_memories(

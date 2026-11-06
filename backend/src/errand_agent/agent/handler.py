@@ -39,7 +39,7 @@ from errand_agent.core.clock import Clock
 from errand_agent.core.ids import IdGen
 from errand_agent.memory.conversation import ConversationStore
 from errand_agent.memory.profile import ProfileStore
-from errand_agent.memory.store import MemoryStore
+from errand_agent.memory.store import Memory, MemoryStore
 from errand_agent.memory.tokens import estimate_tokens
 from errand_agent.providers.tool_env import ToolEnv
 from errand_agent.tracing.recorder import Tracer
@@ -73,6 +73,7 @@ DECLINED = {
 class Reply:
     outcome: RunOutcome
     run_id: str
+    suggestions: tuple[Memory, ...] = ()  # for code to show; the model never saw them
 
 
 class MessageHandler:
@@ -133,11 +134,14 @@ class MessageHandler:
         self._conversation.append(session_id, "user", text)
 
         run_id = ""
+        shown: list[Memory] = []  # suggestions a tool asked code to show the user
 
         async def body(ctx: RunContext) -> RunOutcome:
             nonlocal run_id
             run_id = ctx.run.run_id
-            return await self._respond(ctx, session_id=session_id, user_id=user_id, text=text)
+            return await self._respond(
+                ctx, session_id=session_id, user_id=user_id, text=text, shown=shown
+            )
 
         outcome = await run_with_outcome(
             self._tracer,
@@ -150,19 +154,21 @@ class MessageHandler:
             body=body,
         )
         self._conversation.append(session_id, "assistant", outcome.message, run_id=run_id)
-        return Reply(outcome=outcome, run_id=run_id)
+        return Reply(outcome=outcome, run_id=run_id, suggestions=tuple(shown))
 
     # --- the three paths -------------------------------------------------------------
 
     async def _respond(
-        self, ctx: RunContext, *, session_id: str, user_id: str, text: str
+        self, ctx: RunContext, *, session_id: str, user_id: str, text: str, shown: list[Memory]
     ) -> RunOutcome:
         approval_id = self._approvals.resolve_typed_yes(session_id, text)
         if approval_id is not None:
             return await self._confirm(ctx, approval_id)
         if is_explicit_no(text) and self._approvals.pending_for_session(session_id):
             return self._decline(ctx, session_id)
-        return await self._converse(ctx, session_id=session_id, user_id=user_id, text=text)
+        return await self._converse(
+            ctx, session_id=session_id, user_id=user_id, text=text, shown=shown
+        )
 
     async def _confirm(self, ctx: RunContext, approval_id: str) -> RunOutcome:
         approval = self._approvals.get(approval_id)
@@ -191,7 +197,7 @@ class MessageHandler:
         return RunOutcome(kind="answered", message=message)
 
     async def _converse(
-        self, ctx: RunContext, *, session_id: str, user_id: str, text: str
+        self, ctx: RunContext, *, session_id: str, user_id: str, text: str, shown: list[Memory]
     ) -> RunOutcome:
         errand = self._errands.latest_open(session_id)
         deps = AgentDeps(
@@ -239,6 +245,7 @@ class MessageHandler:
         finally:
             ctx.errand_id = deps.errand_id  # so an error reports the errand honestly
 
+        shown.extend(deps.suggestions)
         card = self._live_card(deps.cards)
         if card is not None:
             message = reply.strip() or "Please check the details on the card and approve."

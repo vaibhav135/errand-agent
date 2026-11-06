@@ -51,7 +51,6 @@ def agent_tools(world: World) -> list[dict[str, Any]]:
     return [e.to_dict() for e in world.events if e.type == "agent_tool"]
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-5: the agent's own tool calls aren't traced")
 async def test_every_agent_tool_call_is_traced(world: World) -> None:
     model = Seeing(
         [ToolCallPart("list_memories", {})],
@@ -67,7 +66,6 @@ async def test_every_agent_tool_call_is_traced(world: World) -> None:
     assert all(c["status"] == "ok" and "latency_ms" in c for c in calls)
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-5: the agent's own tool calls aren't traced")
 async def test_contact_details_are_traced_by_name_only(world: World) -> None:
     model = Seeing([ToolCallPart("update_profile", {"phone": PHONE})], [TextPart("Saved.")])
 
@@ -79,7 +77,6 @@ async def test_contact_details_are_traced_by_name_only(world: World) -> None:
     assert "9876543210" not in everything
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-5: list_memories hands pending suggestions over")
 async def test_pending_suggestions_never_reach_the_model(world: World) -> None:
     seed_demo_user(world.conn, world.clock)  # pending: Sparks (electrician), CoolBreeze (AC)
     model = Seeing([ToolCallPart("list_memories", {})], [TextPart("Here's what I know.")])
@@ -89,3 +86,19 @@ async def test_pending_suggestions_never_reach_the_model(world: World) -> None:
     seen = "\n".join(model.received)
     assert "Sparks" not in seen and "CoolBreeze" not in seen
     assert "awaiting_review" in seen  # it may know *that* suggestions wait, not what
+
+
+async def test_show_suggestions_hands_them_to_code_not_the_model(world: World) -> None:
+    seed_demo_user(world.conn, world.clock)
+    model = Seeing([ToolCallPart("show_suggestions", {})], [TextPart("Shown below.")])
+
+    reply = await send(world, model, "what have you noticed about me?")
+
+    shown = {(m.scope, m.status) for m in reply.suggestions}
+    assert shown == {
+        ("electrician", "pending_confirmation"),
+        ("ac_servicing", "pending_confirmation"),
+    }
+    seen = "\n".join(model.received)
+    assert "Sparks" not in seen and "CoolBreeze" not in seen
+    assert "'shown': 2" in seen or '"shown": 2' in seen  # only how many

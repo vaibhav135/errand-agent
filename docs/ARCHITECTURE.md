@@ -148,7 +148,10 @@ services directly run the app lifespan in their own loop (`app.router.lifespan_c
   the run's `run_finished` event: outcome · model calls · tokens · cost · seconds ·
   trace file path (dimmed only on a real terminal). No model configured → what to set,
   exit code 2. Anything starting with `/` is a chat command handled locally (`/quit`,
-  `/exit`; others get "Unknown command"), never sent to the model or saved (BUG-4). A
+  `/exit`; others get "Unknown command"), never sent to the model or saved (BUG-4).
+  `/memories` lists saved facts and the suggestions awaiting review; `/confirm N` /
+  `/reject N` decide one, in code (D2); suggestions a tool asked to show are drawn in a
+  box after the reply, like an approval card. A
   "working…" line shows while a turn runs, and PydanticAI's startup banner is off
   (`PYDANTIC_AI_NO_BANNER=1` unless already set).
 
@@ -748,9 +751,9 @@ stateDiagram-v2
 ### Agent tools: `agent/tools.py`, `agent/deps.py`, `agent/orchestrator.py`
 - **What:** the orchestrator `Agent[AgentDeps, str]` and its tools, all workflow
   commands: `update_requirements`, `search_and_compare`, `propose_booking`,
-  `decline_pending`, `find_my_bookings`, `available_slots`, `start_cancel`, `start_reschedule`, `remember`,
-  `list_memories`, `forget_memory`, `confirm_suggestion`, `reject_suggestion`,
-  `correct_memory`, `update_profile`, `add_address`.
+  `decline_pending`, `get_reviews_summary`, `find_my_bookings`, `available_slots`,
+  `start_cancel`, `start_reschedule`, `remember`, `list_memories`, `forget_memory`,
+  `show_suggestions`, `correct_memory`, `update_profile`, `add_address`.
 - **Why:** the model understands; the workflow decides. **No tool books, cancels,
   reschedules, holds or approves** (a structural test lists the tool names); the
   furthest the model can get is an approval card. Its one approval-related tool,
@@ -761,7 +764,15 @@ stateDiagram-v2
   missing details, a quote the user never said). Options are saved on the errand
   (`options` column) so "option 2" is stable, and only listed slots can be proposed.
   Memory and booking tools only touch the user's own records; profile tools return saved
-  field names, never values. Tests drive the agent offline with a scripted `FunctionModel`
+  field names, never values. **Suggestions never reach the model** (D2 in
+  [DECISIONS.md](DECISIONS.md), BUG-5): `list_memories` returns active facts plus how
+  many suggestions await review; `show_suggestions` makes *code* show them next to the
+  reply (the model learns only how many); the user confirms or rejects in code
+  (`/confirm`, `/reject`; buttons in the web UI). Every tool call is traced as an
+  `agent_tool` event (`agent/tool_trace.py`, a `wrap_tool_execute` capability): the
+  arguments as the model sent them, the result, status ok / retry / error and latency;
+  for `update_profile` / `add_address` only argument *names*, since their values are
+  PII. Tests drive the agent offline with a scripted `FunctionModel`
   and assert database effects. Note for PydanticAI 2.66: a tool's `ModelRetry` is recorded
   as a `ToolReturnPart` with `outcome="retried"`, not a `RetryPromptPart`.
 
@@ -874,7 +885,8 @@ crashes.
 | `state_transition` | `from`, `to`, `reason` |
 | `model_call` | `agent` (orchestrator / review-reader), `model`, `input_tokens`, `estimated_input_tokens` (the context guard's estimate; calibration), `output_tokens`, `latency_ms`, `cost_usd` |
 | `context_sent` | budget (total, memories, working), tokens per section incl. `tools`, memory ids included, excluded ids with reasons, messages included / dropped / out of scope, state and memory text |
-| `tool_call` | `tool`, `args`, `result`, `status`, `latency_ms`, `error` |
+| `tool_call` | a provider call: `tool`, `args`, `result`, `status`, `latency_ms`, `error` |
+| `agent_tool` | one of the agent's own tools, as the model called it: `tool`, `args` (as sent; names only for profile tools), `result`, `status` (ok / retry / error), `reason`, `latency_ms` |
 | `approval` | requested / granted / rejected / invalidated, `approval_id`, fingerprint |
 | `memory` | remembered / suggested / confirmed / rejected / forgotten, key, scope, source, status |
 | `profile` | changed field names only (never values) |
