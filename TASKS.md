@@ -32,7 +32,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] State model + explicit transitions (tables per kind, history, generated diagrams)
 - [x] Filtering + deterministic ranking of search results
 - [x] Approval gate: approval bound to hash(action, provider, slot, price); invalidated on change
-- [ ] `GuardedToolEnv`: traced provider calls + per-run limits
+- [x] `GuardedToolEnv`: traced provider calls + per-run limits
 - [ ] Booking executor: persisted idempotency key, timeout → `get_booking_status`, no duplicate bookings
 - [ ] Reconciler: startup pass + 30 s background loop + per-run check; resolves `unverified`;
       retries `cancel_pending` until min(15 min after approval, 1 h before the visit), then `cancel_failed`

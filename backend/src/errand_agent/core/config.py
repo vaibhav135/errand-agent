@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     model: str | None = None
     mock_seed: int = 42
 
+    # Hard per-run limits (one run = one inbound event handled end to end).
+    max_model_turns: int = Field(default=8, ge=1)
+    max_tool_calls: int = Field(default=20, ge=1)
+    max_run_seconds: float = Field(default=60.0, gt=0)
+
     # validation_alias = the standard, unprefixed env var name.
     anthropic_api_key: SecretStr | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
     openai_api_key: SecretStr | None = Field(default=None, validation_alias="OPENAI_API_KEY")

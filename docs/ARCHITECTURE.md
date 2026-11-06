@@ -79,6 +79,7 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 | `ERRAND_AGENT_DB_PATH` / `ERRAND_MOCK_DB_PATH` / `ERRAND_TRACE_DIR` | under `data_dir` |
 | `ERRAND_MODEL` | unset (e.g. `anthropic:claude-sonnet-5-5`) |
 | `ERRAND_MOCK_SEED` | `42` |
+| `ERRAND_MAX_MODEL_TURNS` / `ERRAND_MAX_TOOL_CALLS` / `ERRAND_MAX_RUN_SECONDS` | `8` / `20` / `60` (per-run hard limits) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | unset; standard names, no prefix |
 
 Local values go in `backend/.env` (gitignored), copied from the committed
@@ -293,6 +294,20 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
   fields are rejected (they come from model tool calls). Dates are checked against the
   clock's today and the contract's `MAX_DATE_RANGE_DAYS` (14), with messages the model
   can act on.
+
+### Guarded tool calls and limits: `workflow/guarded_env.py`
+- **What:** `GuardedToolEnv` wraps any `ToolEnv`; `BudgetMeter` enforces a `RunBudget`
+  (model turns, tool calls, wall-clock seconds per run); `LimitExceeded`.
+- **Why:** hard limits and per-call tracing in one place, so no provider call can skip
+  either.
+- **How:** each call charges the meter, then runs inside a `tool_call` trace span
+  (args, sanitized result, status, latency). Limits are checked **before** a call
+  starts; an in-flight call is never cut off, since interrupting a side effect would
+  create the very "did it happen?" ambiguity we avoid (the provider's own timeout
+  bounds it). `get_booking_status` is **budget-exempt** (counted and traced, never
+  blocked): after a side effect, finding out what happened must always be possible;
+  the executor caps it itself. A limit hit emits `limit_hit` and raises
+  `LimitExceeded`, which ends the *run* with a clear outcome, never the errand.
 
 ### Ranking: `workflow/ranking.py`
 - **What:** `rank_options(providers, requirements)` → the top 3 options, each with up to
