@@ -37,6 +37,7 @@ from typing import Literal
 from pydantic_ai.models import Model
 
 from errand_agent.agent.budget import tool_definition_tokens
+from errand_agent.agent.claims import correction
 from errand_agent.agent.deps import AgentDeps
 from errand_agent.agent.loop import run_agent, to_history
 from errand_agent.agent.orchestrator import build_orchestrator, orchestrator_tools
@@ -488,14 +489,38 @@ class MessageHandler:
         card = self._live_card(deps.cards)
         if card is not None:
             message = reply.strip() or "Please check the details on the card and approve."
-            return RunOutcome(kind="needs_approval", message=message, approval=card)
+            return RunOutcome(
+                kind="needs_approval",
+                message=self._checked(ctx, session_id, message),
+                approval=card,
+            )
         return RunOutcome(
             kind="answered",
-            message=reply.strip() or "Sorry, could you say that again?",
+            message=self._checked(
+                ctx, session_id, reply.strip() or "Sorry, could you say that again?"
+            ),
             options=deps.searched or None,  # what was found, to pick from on the slots card
         )
 
     # --- helpers ---------------------------------------------------------------------
+
+    def _checked(self, ctx: RunContext, session_id: str, message: str) -> str:
+        """The model's reply, plus a code-written note if it claims the open request is
+        done when it isn't (BUG-12): only an approval completes one, never a model turn."""
+        errand = self._errands.latest_open(session_id)
+        waiting = next(
+            (
+                a
+                for a in self._approvals.pending_for_session(session_id)
+                if errand is not None and a.errand_id == errand.errand_id
+            ),
+            None,
+        )
+        fix = correction(message, errand, waiting)
+        if fix is None or errand is None:
+            return message
+        ctx.run.emit("claim_corrected", {"phrase": fix.phrase, "errand_id": errand.errand_id})
+        return f"{message}\n\n{fix.note}"
 
     def _still_available(self, approval: Approval) -> list[Option]:
         """The errand's last search, minus the slot this approval just lost."""

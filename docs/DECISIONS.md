@@ -372,3 +372,28 @@ the tool calls, and the model path already carries preferences, explanation and 
 
 **Optional rule not taken:** "slot less than 2 hours away: notify only". Easy to add to
 the decision table if same-day replacements prove unrealistic.
+
+## D7. Evals: deterministic scenarios gate every run; the real model only on demand (2026-11-06)
+
+**Status:** accepted; Phase 8.
+
+**Practice we checked.** Agent projects commonly run two lanes: deterministic tests
+(no model calls, no key, seconds) on every commit, and evals that call a real model or
+an LLM judge on merge, nightly or on demand, kept out of the default run with a marker
+and read as trends rather than hard gates; hard invariants gate, quality signals are
+watched (PydanticAI's testing docs; Arize, "Evals in CI"; Autonoma's CI guide).
+
+**Ours.** The 25 scenarios use a scripted model: deterministic, offline and fast, and
+what they assert are hard invariants ("no booking without valid approval"). By that
+practice they belong in the every-run lane, so `make test` runs them. `make evals` runs
+the same scenarios and writes `evals/results.md`; ordinary test runs don't touch it, so
+the repo doesn't change on every run. The real model's judgment is checked by
+`make smoke` (one conversation, ~$0.05, on demand).
+
+**What scripted scenarios can and can't show.** They can't measure the model; they show
+the code keeps its guarantees whatever the model does, so several make the model
+misbehave on purpose (lie about a booking, invent a slot, obey an injected review). That
+found BUG-12: a false "booked" in the model's text reached the user.
+
+**Deferred:** the large generated mock world (Phase 8's last item). None of the
+assignment's eval items needs it; it returns only if time allows after Phase 9.

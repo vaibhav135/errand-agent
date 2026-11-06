@@ -59,6 +59,7 @@ EVENT_TYPES = LIFECYCLE_TYPES | {
     "error",
     "provider_cancellation",  # the monitor saw a provider cancel a booking (Phase 7)
     "notice_decision",  # whether and how the user is told, and why
+    "claim_corrected",  # a reply claimed what wasn't verified; a code note was added
 }
 ENVELOPE_KEYS = frozenset({"ts", "run_id", "session_id", "seq", "type"})
 

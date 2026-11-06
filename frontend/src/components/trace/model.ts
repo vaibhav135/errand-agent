@@ -76,6 +76,8 @@ export function summarize(e: TraceEvent): string {
       return `${f.provider_name} cancelled · ${String(f.service).replaceAll('_', ' ')} · ${formatSlot(String(f.slot))}`
     case 'notice_decision':
       return `${f.decision} · ${f.reason}`
+    case 'claim_corrected': // the model claimed what code hadn't verified (BUG-12)
+      return `reply said “${f.phrase}”: note added (not verified)`
     default:
       return ''
   }

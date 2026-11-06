@@ -1022,6 +1022,15 @@ user message
   shows the reply without it) (BUG-8). Approval cards need no note: STATE reports any
   pending approval.
 
+  **Claim check (BUG-12, `agent/claims.py`):** a model turn's reply is the model's own
+  text, so before it is saved it is checked against verified state. If it claims the
+  open request is done ("booked", "cancelled", "moved", with no negation or hedge such
+  as "isn't … until", "it'll be" just before), a code-written note is added after it:
+  "Note from the app: nothing is booked yet. The … card … is still waiting for your
+  approval." A model turn never completes a request (only an approval does), so such a
+  claim is always unverified. With nothing open, a mention of a past booking is left
+  alone. Traced as `claim_corrected`.
+
   `pick(session_id=, provider_id=, slot=)` is the slots card: a click holds exactly that
   provider and slot in code (`BookingFlow.propose`, no model, `trigger="slot_pick"`) and
   returns its approval card; picking never books. The slot must be one the errand's
@@ -1141,6 +1150,35 @@ user message
   - Tests: Vitest + Testing Library on jsdom (`vitest.config.ts` reuses the Vite config,
     so `@/` resolves the same); `src/test/fakeApi.ts` routes `fetch` by method and path.
     `make test` runs backend and frontend.
+
+### Evals: `backend/tests/evals/`, `backend/tests/smoke/` (D7)
+- **What:** 25 end-to-end scenarios, each a simulated user talking to the real handler,
+  workflow and mock providers with a scripted model, asserting outcomes and six global
+  invariants; `evals/results.md` is generated from the run. Plus one live smoke test.
+- **Why:** the assignment's "≥20 automated scenarios with simulated users … assert
+  outcomes and invariants … offline against a scripted model", and a generated table.
+- **How:**
+  - `harness.py`'s `Sim`: temp databases on a FakeClock; the user can `say`, `approve` /
+    `decline` (with the shown fingerprint), `pick`, trigger `provider_cancels`, `restart`
+    the app (fresh handler + startup reconcile), swap the provider env (a `ScriptedEnv`
+    that crashes or fails on cue) and seed the 55-memory demo user. Each action pauses
+    30 s of FakeClock time, so "before" and "after" are distinguishable in the trace.
+  - Invariants, checked by every scenario (`sim.check()`): every agent booking traces to
+    a consumed approval for exactly that provider, price and slot (or a consumed move to
+    it); one booking per errand; every run ends with an outcome and a saved reply; no
+    context holds a memory that was forgotten, replaced, rejected or unconfirmed at that
+    moment; every context within budget; every run within its limits. `test_harness.py`
+    plants each violation to prove its check fires.
+  - Several scripts make the model misbehave on purpose (claims "booked", invents a slot,
+    obeys an injected review): a scripted model can't measure judgment, but it shows the
+    code holds whatever the model does. One of these found BUG-12.
+  - Results: `@pytest.mark.eval(scenario=, category=, expected=)` plus `report.actual` /
+    `report.notes`; a pytest hook collects pass/fail. `make test` runs the scenarios
+    (they're deterministic, the invariant gate); only `make evals` writes the table
+    (`--eval-table`), stamped with the date and commit.
+  - `make smoke` (marker `smoke`, excluded by default, skipped without a key): the real
+    model in one conversation must reach an approval card, book nothing before "yes",
+    and exactly one booking after it.
 
 ## Run lifecycle
 
