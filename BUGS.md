@@ -106,8 +106,9 @@ listed at the end.
   trace event.
 - **How found:** reading the trace while checking what reached the model.
 - **Related:** `list_memories` returns pending suggestions *with their values* to the
-  model. Decided to keep unconfirmed inferences out of the model's context entirely
-  (`docs/DECISIONS.md`, D1); fixed together with this bug.
+  model. Decided to keep unconfirmed inferences out of the model's context entirely:
+  suggestions reach the user through code (`docs/DECISIONS.md`, D2); fixed together
+  with this bug.
 - **Fix:** -
 - **Regression test:** -
 - **Commits:** -
