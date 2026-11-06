@@ -53,7 +53,9 @@ computed string, which would be deliberate evasion.
   treats it as valid.
 - **How:** Nothing calls `datetime.now()` or `time.sleep()` directly; a clock is
   injected. All datetimes are UTC-aware. `FakeClock.advance()` moves `now()` and
-  `monotonic()` together; `sleep()` advances instantly.
+  `monotonic()` together; `sleep()` advances instantly. `utc_text()` is the single way
+  any datetime is written to SQLite (UTC, whole seconds), because SQLite compares
+  stored datetimes as text and mixed offsets or precision would sort wrongly.
 
 ```
 app:   clock = SystemClock()                    ─┬─▶ MockWorld(clock)

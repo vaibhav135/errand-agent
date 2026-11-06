@@ -3,12 +3,11 @@ from pathlib import Path
 
 import pytest
 
-from errand_agent.core.clock import FakeClock
+from errand_agent.core.clock import FakeClock, utc_text
 from errand_agent.core.ids import SequentialIdGen
 from errand_agent.mocks.scenario import Scenario
-from errand_agent.mocks.schedule import IST
 from errand_agent.mocks.seed import AREAS, ATTACK_CATEGORIES, SERVICES
-from errand_agent.mocks.world import MockWorld, utc_text
+from errand_agent.mocks.world import MockWorld
 from errand_agent.providers.models import (
     MAX_DATE_RANGE_DAYS,
     DateRange,
@@ -162,12 +161,6 @@ async def test_confirmed_booking_hides_a_slot_and_cancelled_frees_it(
 
     conn.execute("UPDATE bookings SET status = 'cancelled' WHERE booking_id = 'bk_x'")
     assert slot in await slots_of(world, provider_id)
-
-
-def test_utc_text_normalises_offset_and_precision() -> None:
-    ist = datetime(2026, 11, 7, 10, 0, 0, 123456, tzinfo=IST)
-
-    assert utc_text(ist) == "2026-11-07T04:30:00+00:00"
 
 
 # --- get_provider ------------------------------------------------------------------------------

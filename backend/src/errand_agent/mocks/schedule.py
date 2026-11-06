@@ -16,7 +16,7 @@ How:  Hourly starts 08:00-18:00 IST (last slot ends 19:00). Each hour is offered
       means mornings in Bengaluru; storage stays UTC (see the mock_world schema).
 """
 
-from datetime import UTC, date, datetime, time, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 
 from errand_agent.mocks.rand import keyed_unit
 
@@ -24,15 +24,6 @@ IST = timezone(timedelta(hours=5, minutes=30), name="IST")
 FIRST_HOUR = 8
 LAST_HOUR = 18
 OFFER_SHARE = 0.55
-
-
-def utc_text(dt: datetime) -> str:
-    """The one way mock_world stores a datetime: UTC, whole seconds, ISO-8601.
-
-    SQLite compares these as text, so every stored value must share one offset and
-    one precision (a SystemClock "now" carries microseconds; slots don't).
-    """
-    return dt.astimezone(UTC).isoformat(timespec="seconds")
 
 
 def slot_schedule(provider_id: str, day: date, *, seed: int) -> list[datetime]:

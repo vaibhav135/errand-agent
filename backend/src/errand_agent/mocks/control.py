@@ -15,7 +15,7 @@ How:  The booking becomes `cancelled_by_provider` (freeing its slot) and the eve
       ValueError: this is a test/demo tool, so mistakes should be loud.
 """
 
-from errand_agent.mocks.schedule import utc_text
+from errand_agent.core.clock import utc_text
 from errand_agent.mocks.world import MockWorld
 from errand_agent.providers.models import Booking
 from errand_agent.store.db import transaction
