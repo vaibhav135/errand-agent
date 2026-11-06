@@ -129,7 +129,21 @@ services directly run the app lifespan in their own loop (`app.router.lifespan_c
   `FakeClock` and temp paths.
 - **How:** startup migrates `agent.db` and opens the mock world (migrated and seeded
   once); restarts reuse the same files. The dev server uses env/`.env` settings, the
-  system clock and random ids.
+  system clock and random ids. `build_handler(services)` makes the `MessageHandler`
+  (models and budgets from Settings) for both the chat CLI and the API, so they can't
+  drift; it is separate from `build_services` so the app starts without a model key.
+
+### Chat CLI: `api/chat.py` (`make chat`)
+- **What:** a read-reply loop for the demo user over the same handler, databases and
+  traces as the web API; `render_card()` draws an approval card.
+- **Why:** to see the real model use the tools while the only moving parts are the agent
+  and the workflow (one suspect per surprise), and to retry a prompt change in seconds.
+- **How:** standard library only (`input()` + `readline` for line editing and history).
+  Startup runs one reconcile pass, then starts a new session. The card is drawn from the
+  approval's stored details, never the model's text. Each reply ends with a footer from
+  the run's `run_finished` event: outcome · model calls · tokens · cost · seconds ·
+  trace file path (dimmed only on a real terminal). No model configured → what to set,
+  exit code 2.
 
 ### Migrations: `store/migrate.py`
 - **What:** `migrate(conn, directory, clock)` applies `NNNN_name.sql` files in order.

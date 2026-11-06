@@ -1,0 +1,137 @@
+from collections.abc import Iterator
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from errand_agent.api.app import Services, build_handler, build_services
+from errand_agent.api.chat import chat_loop, main, render_card
+from errand_agent.core.clock import FakeClock
+from errand_agent.core.config import Settings
+from errand_agent.core.ids import SequentialIdGen
+from errand_agent.workflow.approvals import Approval, ApprovalDetails
+from tests.unit.agent_script import ScriptedModel, call, say
+
+COOLBREEZE = "bk_hist_coolbreeze"  # seeded for the demo user: in 5 days at 10:00 IST, ₹1200
+
+
+class Terminal:
+    """Plays the user at the keyboard: hands out lines, then EOF (Ctrl-D)."""
+
+    def __init__(self, *lines: str) -> None:
+        self.lines = list(lines)
+        self.out: list[str] = []
+
+    def read(self) -> str:
+        if not self.lines:
+            raise EOFError
+        return self.lines.pop(0)
+
+    def write(self, text: str) -> None:
+        self.out.append(text)
+
+    @property
+    def text(self) -> str:
+        return "\n".join(self.out)
+
+
+@pytest.fixture
+def services(app_settings: Settings, app_clock: FakeClock) -> Iterator[Services]:
+    s = build_services(app_settings, app_clock, SequentialIdGen())
+    yield s
+    s.close()
+
+
+async def chat(services: Services, terminal: Terminal, model: ScriptedModel) -> None:
+    handler = build_handler(services, model=model.model())
+    await chat_loop(
+        handler,
+        services,
+        read=terminal.read,
+        write=terminal.write,
+    )
+
+
+# --- the approval card is drawn by code ---------------------------------------------------
+
+
+def card(action: str) -> Approval:
+    return Approval(
+        approval_id="appr_1",
+        errand_id="err_1",
+        action=action,  # type: ignore[arg-type]
+        fingerprint="f",
+        details=ApprovalDetails(
+            action=action,  # type: ignore[arg-type]
+            provider_id="plm_quickfix",
+            provider_name="QuickFix Plumbing",
+            slot=datetime(2026, 11, 7, 3, 30, tzinfo=UTC),
+            price_inr=699,
+            booking_id=None if action == "book" else "bk_1",
+        ),
+        status="pending",
+        created_at=datetime(2026, 11, 5, tzinfo=UTC),
+        decided_at=None,
+        decided_via=None,
+        reason=None,
+    )
+
+
+@pytest.mark.parametrize(
+    ("action", "title"),
+    [("book", "Approve booking?"), ("cancel", "Approve cancellation?"),
+     ("reschedule", "Approve new time?")],
+)  # fmt: skip
+def test_card_shows_the_exact_details(action: str, title: str) -> None:
+    text = render_card(card(action))
+
+    assert title in text
+    assert "QuickFix Plumbing · Sat 07 Nov, 09:00 · ₹699" in text  # slot shown in IST
+    assert 'reply "yes" to approve, "no" to decline' in text
+
+
+# --- a conversation -------------------------------------------------------------------------
+
+
+async def test_model_proposes_user_types_yes(services: Services) -> None:
+    terminal = Terminal("Cancel my AC servicing", "yes", "/quit")
+    model = ScriptedModel([call("start_cancel", booking_id=COOLBREEZE)], [say("Cancel this one?")])
+
+    await chat(services, terminal, model)
+
+    out = terminal.text
+    assert "Cancel this one?" in out
+    assert "Approve cancellation?" in out
+    assert "CoolBreeze AC Care · Tue 10 Nov, 10:00 · ₹1200" in out
+    assert "Cancelled your CoolBreeze AC Care booking" in out
+
+
+async def test_every_reply_has_a_footer_from_its_trace(services: Services) -> None:
+    terminal = Terminal("hi")
+    model = ScriptedModel([say("Hello!")])
+
+    await chat(services, terminal, model)
+
+    footer = terminal.out[-1]
+    assert "answered" in footer
+    assert "1 model call" in footer and "tokens" in footer
+    trace = Path(footer.split()[-1])  # the run's trace file, to open when debugging
+    assert trace.suffix == ".jsonl" and '"run_finished"' in trace.read_text()
+
+
+async def test_ctrl_d_ends_the_chat_quietly(services: Services) -> None:
+    terminal = Terminal()  # EOF straight away
+
+    await chat(services, terminal, ScriptedModel())  # returns instead of raising
+
+
+# --- startup ---------------------------------------------------------------------------------
+
+
+def test_without_a_model_it_says_what_to_set(app_settings: Settings, app_clock: FakeClock) -> None:
+    terminal = Terminal("hi")
+
+    code = main(settings=app_settings, clock=app_clock, read=terminal.read, write=terminal.write)
+
+    assert code == 2
+    assert "ERRAND_MODEL" in terminal.text and "backend/.env" in terminal.text

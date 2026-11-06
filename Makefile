@@ -1,5 +1,5 @@
 # Dev tasks. Targets are written for GNU Make 3.81 (the macOS default).
-.PHONY: help install dev dev-backend dev-frontend test lint format seed-data build
+.PHONY: help install dev dev-backend dev-frontend chat test lint format seed-data build
 
 BACKEND := backend
 FRONTEND := frontend
@@ -20,6 +20,9 @@ dev-backend: ## Run FastAPI with reload on :8000
 
 dev-frontend: ## Run Vite dev server on :5173
 	cd $(FRONTEND) && bun run dev --port 5173
+
+chat: ## Chat with the live agent in the terminal (needs ERRAND_MODEL + key in backend/.env)
+	cd $(BACKEND) && uv run python -m errand_agent.api.chat
 
 test: ## Run backend tests
 	cd $(BACKEND) && uv run pytest

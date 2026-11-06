@@ -59,7 +59,8 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Run loop via `agent.iter`: turn budget, `model_call` traces with tokens and cost
 - [x] Message handler: per-run reconcile, typed yes/no in code (no LLM), context → history,
       persistence (our `messages` table, not PydanticAI's history), outcome
-- [ ] `make chat` CLI for live testing; live smoke test (skipped without a key)
+- [x] `make chat` CLI for live testing (stdlib loop, code-drawn card, per-turn trace footer)
+- [ ] Live smoke test (`make smoke`, skipped without a key, not part of `make test`)
 
 ## Phase 6 — Proactive follow-up
 - [ ] Simulated provider-cancellation event + monitor

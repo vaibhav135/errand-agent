@@ -14,6 +14,7 @@ Requires [uv](https://docs.astral.sh/uv/) and [bun](https://bun.sh/).
 ```sh
 make install   # backend + frontend deps
 make dev       # FastAPI on :8000, Vite on :5173 (open http://localhost:5173)
+make chat      # chat with the live agent in the terminal (needs a model + key in backend/.env)
 make test      # backend tests
 make lint      # ruff, pyright, oxlint, tsc
 make seed-data # regenerate the demo user's seed (memories + conversation)
