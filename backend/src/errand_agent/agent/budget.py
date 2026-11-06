@@ -9,9 +9,10 @@ Why:  The ContextBuilder sizes what a run *starts* with. Within a run, each tool
       5,062 tokens against a 4,500 budget). The assignment asks for a fixed cap on the
       model context, so the cap must hold for every request, not just the first.
 
-How:  - Size = fixed part (tool definitions + instructions, set on the deps by the
-        handler) + every message part, estimated with the same pessimistic estimator
-        as the ContextBuilder.
+How:  - Size = fixed part (tool definitions + the provider's hidden tool-use prompt +
+        instructions, set on the deps by the handler) + every message part. Text is
+        estimated as text, tool arguments and results as JSON data, with the ratios
+        calibrated against real counts so the estimate never undercounts (BUG-7).
       - Over budget -> observation masking: the oldest tool results from this run are
         replaced by a short placeholder, oldest first, until it fits. The newest
         results (the ones the model is about to read) are never masked. This is the
@@ -34,7 +35,11 @@ from pydantic_ai import ModelMessage, RunContext, Tool, ToolCallPart
 from pydantic_ai.messages import ModelRequest, ToolReturnPart
 
 from errand_agent.agent.deps import AgentDeps
-from errand_agent.memory.tokens import estimate_tokens
+from errand_agent.memory.tokens import (
+    TOOL_USE_OVERHEAD_TOKENS,
+    estimate_json_tokens,
+    estimate_tokens,
+)
 from errand_agent.workflow.guarded_env import LimitExceeded
 
 MASKED = "[result omitted to fit the context budget]"
@@ -42,7 +47,8 @@ PART_OVERHEAD_TOKENS = 4  # part kind, tool name and call id markers
 
 
 def tool_definition_tokens(tools: Sequence[Tool[Any]]) -> int:
-    """Estimated tokens of the tool schemas, which ship with every request."""
+    """Estimated tokens of the tool schemas plus the hidden tool-use prompt the provider
+    adds whenever tools are offered: both ship with every request."""
     definitions = [
         {
             "name": t.tool_def.name,
@@ -51,19 +57,22 @@ def tool_definition_tokens(tools: Sequence[Tool[Any]]) -> int:
         }
         for t in tools
     ]
-    return estimate_tokens(json.dumps(definitions))
+    # Schemas are mostly English descriptions: they measure like text, not dense data.
+    return estimate_tokens(json.dumps(definitions)) + TOOL_USE_OVERHEAD_TOKENS
 
 
-def _part_text(part: Any) -> str:
-    if isinstance(part, ToolCallPart):
-        return part.tool_name + json.dumps(part.args_as_dict())
+def _part_tokens(part: Any) -> int:
+    if isinstance(part, ToolCallPart):  # JSON data: arguments
+        return estimate_json_tokens(part.tool_name + json.dumps(part.args_as_dict()))
     content = getattr(part, "content", "")
-    return content if isinstance(content, str) else json.dumps(content, default=str)
+    if isinstance(part, ToolReturnPart) and not isinstance(content, str):  # JSON data: results
+        return estimate_json_tokens(json.dumps(content, default=str))
+    return estimate_tokens(content if isinstance(content, str) else str(content))
 
 
 def request_tokens(messages: Sequence[ModelMessage], *, fixed: int) -> int:
     parts = [p for m in messages for p in m.parts]
-    return fixed + sum(estimate_tokens(_part_text(p)) + PART_OVERHEAD_TOKENS for p in parts)
+    return fixed + sum(_part_tokens(p) + PART_OVERHEAD_TOKENS for p in parts)
 
 
 def _maskable(messages: list[ModelMessage]) -> list[tuple[int, int]]:

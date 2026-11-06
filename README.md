@@ -18,6 +18,7 @@ make chat      # chat with the live agent in the terminal (needs a model + key i
 make test      # backend tests
 make lint      # ruff, pyright, oxlint, tsc
 make seed-data # regenerate the demo user's seed (memories + conversation)
+make calibrate # re-measure real token counts (free count_tokens API; needs a key)
 make           # list all targets
 ```
 
