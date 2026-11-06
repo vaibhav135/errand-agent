@@ -1,5 +1,5 @@
 # Dev tasks. Targets are written for GNU Make 3.81 (the macOS default).
-.PHONY: help install dev demo dev-backend dev-frontend chat test evals smoke lint format seed-data calibrate latency build
+.PHONY: help install dev demo dev-backend dev-frontend chat test evals smoke lint format seed-data calibrate latency trace build
 
 BACKEND := backend
 FRONTEND := frontend
@@ -57,6 +57,10 @@ calibrate: ## Measure real token counts (free count_tokens API; needs a key) for
 # Live model calls: a few cents per run. Pass options with ARGS, e.g. ARGS="--effort low --cache".
 latency: ## Time to first word and total for a few live turns (costs a few cents; needs a key)
 	cd $(BACKEND) && uv run python scripts/measure_latency.py $(ARGS)
+
+# Live model calls: a few cents. Rewrites docs/trace/.
+trace: ## Record the design note's trace: a real booking that times out after succeeding
+	cd $(BACKEND) && uv run python scripts/record_trace.py
 
 build: ## Production build of the frontend
 	cd $(FRONTEND) && bun run build

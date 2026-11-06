@@ -1,297 +1,133 @@
-# BUGS
+# Bugs
 
-Real bugs hit while building, logged when found (**open**) and closed with a `test:`
-commit that reproduces the bug (`xfail(strict=True)`) and the `fix:` commit that removes
-the marker. Things found alongside that are *not* bugs (refactors, UX, test gaps) are
-listed at the end.
+Real bugs hit while building. Each was logged as soon as it was found, reproduced by a
+test committed first as an expected failure (`xfail(strict=True)`), and fixed in a
+separate commit that removes the marker; both commits are listed. Numbers are stable:
+code, commits and docs refer to them.
 
-| # | Bug | Severity | Status |
-|---|---|---|---|
-| 1 | Rollback masked the real database error | medium | fixed |
-| 2 | Seeded history contradicts the mock world | high | fixed |
-| 3 | The context budget isn't a cap | high | fixed |
-| 4 | Slash commands leak to the model | low | fixed |
-| 5 | The agent's own tool calls aren't traced | medium | fixed |
-| 6 | An inference can contradict an explicit preference | medium | fixed |
-| 7 | The token estimate undercounts real tokens by ~45% | high | fixed |
-| 8 | The model doesn't know what code showed the user | medium | fixed |
-| 9 | The test suite runs out of file descriptors on a default Mac | medium | fixed |
-| 10 | The web chat shows nothing while the agent works on a reply | medium | fixed |
-| 11 | "Here are your other options" after a taken slot, but none are shown | medium | fixed |
-| 12 | The model's false "booked" reaches the user unchecked | high | fixed |
+## The top three
 
-## 1. Rollback masked the real database error
-- **What broke:** When a write failed in a way that makes SQLite end the transaction
-  itself, `transaction()` raised `OperationalError: cannot rollback - no transaction is
-  active` instead of the real error (e.g. `IntegrityError` from a trigger's
-  `RAISE(ROLLBACK)`, or a disk-full / I/O error). Data was safe; the cause was lost.
-- **Why:** The `except` branch always issued `ROLLBACK`. SQLite had already rolled back,
-  so the second rollback failed, and Python propagated the newer exception.
-- **How found:** Code review of `transaction()` while building the migration runner;
-  reproduced with a `RAISE(ROLLBACK)` trigger before fixing.
-- **Fix:** Roll back only if `conn.in_transaction`.
-- **Regression test:** `backend/tests/unit/test_store_db.py::test_original_error_survives_when_sqlite_already_rolled_back`
-- **Commits:** repro `9a809a2` · fix `0d4e6c6`
-
-## 2. Seeded history contradicts the mock world
-- **Status:** fixed
-- **What broke:** on a plain "hi" in the first live `make chat`, the agent apologised for
-  "its own" earlier mistakes. The seeded transcript has the assistant saying "Saturday's
-  cleaning is confirmed for 11:00." (3×) and "Your booking is confirmed…", but no such
-  booking exists in the mock world. The agent called `find_my_bookings`, saw the
-  contradiction and confessed, unprompted. Trusting the provider over the transcript was
-  right; the seeded data was wrong.
-- **Why:** the seed had two sources of truth built independently, the seed generator
-  (memories + conversation) and the mock world's booking history, and nothing
-  cross-checked them. Three defects followed:
-  1. the canned `FILLER` replies stated bookings that never existed;
-  2. the inferred memories cited bookings the history didn't have ("2 completed
-     bookings with AquaCare": 0 completed, 1 cancelled);
-  3. facts were shuffled into sessions regardless of their date, so the superseded
-     "plumbers under 1200" was said 40 days *after* "up to 1500" replaced it (44 of
-     48 facts were said more than 10 days from when they were learned).
-- **How found:** live chat; trace `run_9617af2d…` (all 201 messages in context, one
-  `find_my_bookings` call).
-- **Fix:** the mock world's history is the one source of truth for bookings (it now
-  holds the completed bookings the inferences cite); facts are said in the session
-  nearest their date, oldest first; the small talk states no booking facts.
-- **Regression test:** `backend/tests/unit/test_memory_seed.py::test_facts_are_said_when_they_were_learned`,
-  `::test_inferred_reasons_match_the_booking_history`,
-  `::test_the_seeded_assistant_makes_no_booking_claims`; and
-  `backend/tests/unit/test_memory_inference.py::test_the_seeds_usual_providers_are_what_the_rules_derive`
-  (runs the real inference rules over the history).
-- **Commits:** repro `dae1e17` · fix `c347e46`
-
-## 3. The context budget isn't a cap
-- **Status:** fixed
-- **What broke:** with `ERRAND_CONTEXT_TOKEN_BUDGET=6000`, one run's real model requests
-  were 6,959, 10,623 and 11,200 input tokens. The `context_sent` event reported 3,500,
-  so the trace understates what was actually sent. The assignment asks for a fixed
-  per-turn budget.
-- **Why:** the budget only governed the context *packet* the run started with, and even
-  that was filled from the wrong place:
-  1. the conversation came from *all* of the user's sessions (201 messages, none
-     dropped, because the whole seeded history fit), so nothing ever limited it;
-  2. the 17 tool definitions sent with every request (~2,000 tokens) weren't counted;
-  3. each tool call and result in a run was appended to later requests uncapped (the
-     repro measured 2,457 → 5,062 against 4,500).
-  Hypothesis (c), estimate vs. the provider's tokenizer, is now observable rather than
-  guessed: every `model_call` records both numbers.
-- **How found:** same trace: `model_call.input_tokens` vs `context_sent.tokens.total`.
-- **Fix:** decided after reviewing how robust agents manage context (`docs/DECISIONS.md`,
-  D1): history scoped to the current session (earlier sessions logged as out of
-  scope, never sent); the budget counts tool definitions and reserves 1,500 tokens of
-  working room; a context guard before every request masks the run's oldest tool
-  results and, if it still can't fit, ends the run `limit_reached` (`context_tokens`).
-- **Regression test:** `backend/tests/unit/test_context_budget.py` (every request fits,
-  measured by the scripted model itself; tool definitions counted; an unfittable run
-  ends honestly) and `backend/tests/unit/test_memory_seed.py::test_only_the_current_session_reaches_the_model`
-- **Commits:** repro `9874509` · fix `b1ea3fe`
-
-## 4. Slash commands leak to the model
-- **Status:** fixed
-- **What broke:** `/trace` (no longer a chat command after the CLI was slimmed down) was
-  sent to the model as a user message; it replied "I don't have a /trace command".
-- **Why:** `chat_loop` handles only `/quit` and `/exit`; any other text, including
-  `/`-prefixed commands, goes to the handler.
-- **How found:** live chat.
-- **Fix:** anything starting with `/` is a chat command handled in the CLI; unknown ones
-  get "Unknown command". None reaches the agent or the saved conversation.
-- **Regression test:** `backend/tests/unit/test_chat_cli.py::test_unknown_commands_never_reach_the_model`
-- **Commits:** repro `5705b2c` · fix `02234a3`
-
-## 5. The agent's own tool calls aren't traced
-- **Status:** fixed
-- **What broke:** in the first live chat the model mentioned the two pending suggestions
-  (Sparks, CoolBreeze) although the context builder had excluded them. The run had 3
-  model calls but only 1 `tool_call` event (`list_bookings`), so it most likely called
-  `list_memories`, but the trace can't show it. The assignment requires tool names and
-  arguments in every trace.
-- **Why:** only provider calls are traced (through `GuardedToolEnv`); the agent's own
-  tools (`list_memories`, `update_requirements`, `propose_booking`, …) run without any
-  trace event.
-- **How found:** reading the trace while checking what reached the model.
-- **Related:** `list_memories` returns pending suggestions *with their values* to the
-  model. Decided to keep unconfirmed inferences out of the model's context entirely:
-  suggestions reach the user through code (`docs/DECISIONS.md`, D2); fixed together
-  with this bug.
-- **Fix:** a `wrap_tool_execute` capability on the orchestrator traces every agent tool
-  call as an `agent_tool` event (arguments as sent, result, ok / retry / error,
-  latency; argument names only for the profile tools, whose values are PII). Per D2,
-  `list_memories` now returns active facts and a count of suggestions; the
-  confirm/reject tools are gone; `show_suggestions` makes code show them, and the user
-  decides in code (`/memories`, `/confirm N`, `/reject N`).
-- **Regression test:** `backend/tests/unit/test_agent_tool_tracing.py`
-  (`::test_every_agent_tool_call_is_traced`, `::test_contact_details_are_traced_by_name_only`,
-  `::test_pending_suggestions_never_reach_the_model`)
-- **Commits:** repro `584f1b8` · fix `055cc84`
-
-## 6. An inference can contradict an explicit preference
-- **Status:** fixed
-- **What broke:** run over the demo user's booking history, the inference rules suggest
-  "earliest start 09:00" (three old bookings started at 9:00), although the user
-  explicitly said "never before 10am" 40 days ago. The store would save it as a pending
-  suggestion, so the agent would ask the user to confirm the opposite of what they told
-  it. Latent today: `suggest_from_history` isn't called at runtime yet.
-- **Why:** `MemoryStore.propose_inferred` skips a suggestion only if the *same value* is
-  already active / pending / rejected, or the fact was forgotten. A *different* value
-  for a key the user stated explicitly isn't blocked, so explicit doesn't beat inferred.
-- **How found:** writing the BUG-2 consistency test, which runs the real rules over the
-  seeded history.
-- **Fix:** explicit beats inferred: `propose_inferred` skips a suggestion when the user
-  has an active explicit fact for the same key and scope (notes excepted, since they
-  coexist). The seeded user is now a fixed point of inference.
-- **Regression test:** `backend/tests/unit/test_memory_inference.py::test_an_explicit_preference_blocks_a_different_inference`,
-  `::test_the_seeded_user_is_a_fixed_point_of_inference`
-- **Commits:** repro `32174f3` · fix `e7997da`
-
-## 7. The token estimate undercounts real tokens by ~45%
-- **Status:** fixed
-- **What broke:** in the second live chat, every `model_call` showed our estimate well
-  below the provider's real input count: 2,582 vs 3,763 (1.46×), 4,404 vs 6,264
-  (1.42×), 4,843 vs **7,474** (1.54×). The estimate is meant to be *pessimistic*; it
-  isn't, so the 6,000-token cap let a 7,474-token request through. BUG-3's fix holds
-  in our units, not in the provider's.
-- **Why:** measured with Anthropic's `count_tokens` on our own texts, all three
-  hypotheses held: (a) JSON *data* is dense, 2.04 chars/token; (b) a hidden tool-use
-  prompt of 321 tokens is added whenever tools are offered, which we never counted;
-  and on top of that (c) even prose and tool schemas run 2.58-3.00 chars/token on this
-  model, not 3.5 (newer Claude tokenizers produce ~30% more tokens per character).
-- **How found:** the calibration field added by BUG-3 (`estimated_input_tokens` next
-  to `input_tokens`), on the user's second live chat.
-- **Fix:** a calibrated estimate (text 2.4, JSON data 1.9, +350 per request with
-  tools), each ~7% below the lowest measurement. `make calibrate` records exact sample
-  texts with their real counts; the budget default becomes 7,500, derived from
-  measured needs (`docs/DECISIONS.md`, D3).
-- **Regression test:** `backend/tests/unit/test_token_calibration.py` (every recorded
-  sample is estimated at or above its real count; tool definitions include the hidden
-  tool-use prompt), offline from `backend/tests/data/token_calibration.json`.
-- **Commits:** repro `d3bd25b` · fix `9931c5b`
-
-## 8. The model doesn't know what code showed the user
-- **Status:** fixed
-- **What broke:** after code drew the two suggestions in a box under its reply, the next
-  turn the model told the user "I never actually displayed them, even though I said I
-  had", which was false, and offered to show them again.
-- **Why:** things code renders (the suggestions box) aren't part of what the model sees
-  next turn: only the text of its own reply is saved to the conversation, and tool
-  results don't carry across runs. Approval cards don't have this gap because STATE
-  reports "Pending approval: …"; suggestions have no such line.
-- **How found:** the user's second live chat (trace `run_2513f045…`).
-- **Fix:** when code shows suggestions, the saved reply ends with a code-written note,
-  "[The app showed the user N suggestions to review.]": the count only, never their
-  content, and only in the saved conversation (the user's screen shows the reply
-  without it). A STATE line was rejected: it could say suggestions *exist*, not
-  whether they were already *shown*, which was the actual mistake.
-- **Regression test:** `backend/tests/unit/test_agent_tool_tracing.py::test_next_turn_the_model_knows_suggestions_were_shown`
-- **Commits:** repro `9c7b7d3` · fix `1a63b8c`
-
-## 9. The test suite runs out of file descriptors on a default Mac
-- **Status:** fixed
-- **What broke:** `make test` failed for the user with 14 failures and 17 errors, all
-  `OSError: [Errno 24] Too many open files` or SQLite's "unable to open database
-  file". It passed on the machine running the commit gate.
-- **Why:** the tests never close their SQLite connections. Each WAL connection holds up
-  to 3 files (`.db`, `-wal`, `-shm`), and helpers like `World.mock_exec` / `mock_count`
-  open a new connection on every call. Test objects reference each other in cycles
-  (World -> stores -> connection), so connections are freed only when Python's
-  occasional full garbage collection runs; across the whole session the peak reached
-  ~300 open descriptors. macOS's default limit is 256; the gate's shell allowed
-  1,048,576, which hid it. Under `ulimit -n 256` the gate reproduces the failure.
-  The app itself closes its connections (`Services.close()`).
-- **How found:** the user ran `make test` in a default terminal.
-- **Workaround until fixed:** `ulimit -n 4096` in that terminal (no longer needed).
-- **Fix:** an autouse fixture in `tests/conftest.py` tracks every `sqlite3.connect`
-  during a test and closes those connections at teardown (ones made in the app's
-  thread under `TestClient` are closed by the app's own shutdown); `mock_exec` /
-  `mock_count` close their connection at once. Peak open files: ~302 -> 23. `make test`
-  now runs under `ulimit -n 256`, so a future leak fails the gate in every environment.
-- **Regression test:** `backend/tests/unit/test_test_hygiene.py` (a connection opened
-  in one test is closed when it ends), plus the gate's `ulimit -n 256`.
-- **Commits:** repro `dda6be5` · fix `7a57433`
-
-## 10. The web chat shows nothing while the agent works on a reply
-- **Status:** fixed
-- **What broke:** after sending "hello", the chat showed only the user's message for
-  3.5–8.6 s, then the whole reply appeared at once. Nothing said the agent was working,
-  and it looked as if replies weren't streamed.
-- **Why:** the reply's placeholder has no text until the first chunk, and an empty
-  reply renders nothing; the only feedback is the tool progress line ("Searching
-  providers…"), so a turn with no tool call is silent. Streaming does work (the
-  browser received 12 separate `text` events), but almost all of the wait is before
-  the first word: a ~50-token reply is generated in about half a second, so its
-  chunks land in one burst. The CLI had the same gap and got a "working…" line (see
-  the table below); the web UI didn't carry it over.
-- **How found:** the user, in the browser; the run's trace showed one model call of
-  8.6 s with 52 output tokens, and DevTools showed the chunks arriving as SSE events.
-- **Fix:** each reply carries a `streaming` flag. Until its first word, the chat shows
-  typing dots (a tool's progress line replaces them); then the text with a blinking
-  caret until the final reply arrives. `useSmoothText` reveals the streamed text at a
-  steady pace, closing any gap within ~0.5 s, so a burst reads as typing. The wait
-  itself is the latency follow-up below (D5).
-- **Regression test:** `frontend/src/components/chat/Chat.test.tsx` ("shows that the
-  agent is working before the first word (BUG-10)", "swaps the typing dots for a
-  tool's progress line", "marks the reply as streaming until the final arrives,
-  revealing text steadily")
-- **Commits:** repro `57c7d25` · fix `60fcc60`
-
-## 11. "Here are your other options" after a taken slot, but none are shown
-- **Status:** fixed
-- **What broke:** the user approved QuickFix Plumbing at 11:00 with the Demo tab's
-  "slot taken" armed. The reply was "Someone else took that slot just before I could
-  confirm it. Here are your other options." and nothing followed.
-- **Why:** a taken slot ends on the approval path, which is decided in code with no
-  model (by design). Its outcome is a fixed sentence (`workflow/outcomes.py`) that
-  promises options, but the outcome carries none and no code lists them. The errand does
-  go back to "comparing" with the last search's options still stored, so they exist;
-  nobody shows them. `slot_gone` (a hold that expired and couldn't be re-held) has the
-  same gap: "Want to choose another time?" with nothing to choose from.
-- **How found:** the user, testing the Demo tab's "slot taken".
-- **Fix:** the two messages now only say what happened, and code adds what's left:
-  the errand's last search minus the lost slot (top 3), listed by day under "Still
-  available when I searched", and carried in `RunOutcome.options` for the UI (the slot
-  picker draws them). With nothing left, it offers to search again. Picking one holds it
-  again, which re-checks with the provider, so a stale option can't book.
-- **Regression test:** `backend/tests/unit/test_agent_handler.py::test_a_taken_slot_lists_the_options_still_available`,
-  plus the edge cases in `test_workflow_outcomes.py` (only the lost slot is dropped;
-  nothing left offers a new search).
-- **Commits:** repro `2031167` · fix `972056b`
-
-## 12. The model's false "booked" reaches the user unchecked
-- **Status:** fixed
-- **What broke:** with a card waiting for approval, a (scripted) model replied "All
-  done, your plumber is booked!". Nothing was booked, and approval enforcement held, but
-  that sentence was shown to the user as is.
-- **Why:** booking outcomes are code-written, but a model turn's reply is the model's own
-  text, and only the system prompt asks it not to claim unverified results. The
+### BUG-12 · The model's false "booked" reached the user unchecked
+- **What broke:** with an approval card still waiting, the model replied "All done, your
+  plumber is booked!". Nothing was booked (approval enforcement held), but that sentence
+  was shown to the user as written.
+- **Why:** booking outcomes are written by code, but a model turn's reply is the model's
+  own text, and only the system prompt asked it not to claim unverified results. The
   assignment's "never claim success until verified" needs code, like every other
   guarantee here: a prompt is a request, not a check.
-- **How found:** an eval scenario written to try it (Phase 8, "a misbehaving model"),
-  not by a user.
+- **How found:** an eval written to attack the system with a deliberately misbehaving
+  model, not by a user.
 - **Fix:** before a model turn's reply is saved, `agent/claims.py` checks it against
   verified state. A claim that the open request is done ("booked", "cancelled", "moved",
-  with no negation or hedge just before it) gets a code-written note after it: "Note
-  from the app: nothing is booked yet. The … card … is still waiting for your
-  approval." The model's text is kept (nothing silently dropped), the verified status
-  follows it, and the correction is traced (`claim_corrected`). A model turn never
-  completes a request, so such a claim is always unverified; a mention of a past booking
-  with nothing open is left alone.
+  not negated or hedged just before) gets a code-written note after it: "Note from the
+  app: nothing is booked yet. The … card is still waiting for your approval." The
+  model's text is kept, the verified status follows it, and the correction is traced
+  (`claim_corrected`). A mention of a past booking with nothing open is left alone.
 - **Regression test:** `backend/tests/evals/test_approval.py::test_a_false_booked_claim_is_corrected`
-  (and the compromised-model scenario's "cancelled" claim), plus the phrase table in
+  (plus the compromised model's false "cancelled"), and the phrase table in
   `backend/tests/unit/test_agent_claims.py` (claims vs negations and hedges).
 - **Commits:** repro `84acbdd` · fix `d01e810`
 
+### BUG-7 · The token estimate undercounted real tokens by ~45%
+- **What broke:** every model call's estimate was well below the provider's real input
+  count: 2,582 vs 3,763 (1.46×), 4,404 vs 6,264 (1.42×), 4,843 vs **7,474** (1.54×). The
+  estimate is meant to be pessimistic, so a 6,000-token cap let a 7,474-token request
+  through: the fixed context budget held in our units, not the provider's.
+- **Why:** measured with Anthropic's `count_tokens` on our own texts, all three
+  hypotheses held: JSON data is dense (2.04 chars/token); a hidden tool-use prompt of 321
+  tokens is added whenever tools are offered, and we never counted it; and even prose
+  and tool schemas run 2.58–3.00 chars/token on this model, not the assumed 3.5.
+- **How found:** the calibration field added for BUG-3 (`estimated_input_tokens` next to
+  `input_tokens` on every model call), in a live chat.
+- **Fix:** a calibrated estimate (text 2.4, JSON 1.9 chars/token, +350 per request with
+  tools), each set ~7% below the lowest measurement. `make calibrate` records exact
+  sample texts with their real counts, and the 7,500-token budget is derived from
+  measured needs (`docs/DECISIONS.md`, D3).
+- **Regression test:** `backend/tests/unit/test_token_calibration.py` (every recorded
+  sample is estimated at or above its real count; tool definitions include the hidden
+  prompt), offline from `backend/tests/data/token_calibration.json`.
+- **Commits:** repro `d3bd25b` · fix `9931c5b`
+
+### BUG-8 · The model didn't know what code had shown the user
+- **What broke:** after code drew two memory suggestions in a box under the model's
+  reply, the next turn the model told the user "I never actually displayed them, even
+  though I said I had", which was false, and offered to show them again.
+- **Why:** what code renders isn't part of what the model sees next turn. Only the text
+  of its own reply is saved to the conversation, and tool results don't carry across
+  runs. Approval cards don't have this gap because the state section reports "Pending
+  approval: …"; suggestions had nothing similar.
+- **How found:** a live chat (trace `run_2513f045…`).
+- **Fix:** when code shows suggestions, the saved reply ends with a code-written note,
+  "[The app showed the user N suggestions to review.]": the count only, never their
+  content, and only in the saved conversation (the screen shows the reply without it). A
+  state line was rejected: it could say suggestions *exist*, not whether they were
+  already *shown*, which was the actual mistake.
+- **Regression test:** `backend/tests/unit/test_agent_tool_tracing.py::test_next_turn_the_model_knows_suggestions_were_shown`
+- **Commits:** repro `9c7b7d3` · fix `1a63b8c`
+
+## Honourable mentions
+
+**BUG-1 · Rollback masked the real database error.** When SQLite had already ended a
+failed transaction itself, our second `ROLLBACK` raised "cannot rollback" and hid the
+real error. Fix: roll back only if a transaction is still open.
+Test `test_store_db.py::test_original_error_survives_when_sqlite_already_rolled_back` ·
+`9a809a2` → `0d4e6c6`
+
+**BUG-2 · Seeded history contradicted the mock world.** On a plain "hi", the agent
+apologised for "its" earlier mistakes: the seeded chat claimed bookings the provider had
+never made. Fix: the mock world's history is the one source of truth for bookings, and
+facts are said in the session nearest their date.
+Tests in `test_memory_seed.py` and `test_memory_inference.py` · `dae1e17` → `c347e46`
+
+**BUG-3 · The context budget wasn't a cap.** With a 6,000-token budget, real requests
+reached 11,200 tokens: the budget ignored tool definitions, other sessions and the run's
+own tool results. Fix: session-scoped history, everything counted, and a guard before
+every request (D1).
+Tests in `test_context_budget.py` · `9874509` → `b1ea3fe`
+
+**BUG-4 · Slash commands leaked to the model.** `/trace` in the terminal chat went to the
+model as a message. Fix: anything starting with `/` is handled by the CLI.
+Test `test_chat_cli.py::test_unknown_commands_never_reach_the_model` · `5705b2c` → `02234a3`
+
+**BUG-5 · The agent's own tool calls weren't traced.** Only provider calls were, so the
+trace couldn't show the model reading suggestions it shouldn't have seen. Fix: every
+agent tool call is traced (`agent_tool`), and suggestions reach the user through code
+only (D2).
+Tests in `test_agent_tool_tracing.py` · `584f1b8` → `055cc84`
+
+**BUG-6 · An inference could contradict an explicit preference.** The rules suggested
+"earliest start 09:00" although the user had said "never before 10am". Fix: explicit
+beats inferred.
+Test `test_memory_inference.py::test_an_explicit_preference_blocks_a_different_inference`
+· `32174f3` → `e7997da`
+
+**BUG-9 · The test suite ran out of file descriptors on a default Mac.** Tests never
+closed their SQLite connections (peak ~300 open files against macOS's 256). Fix: an
+autouse fixture closes them (peak 23), and `make test` runs under `ulimit -n 256`.
+Test `test_test_hygiene.py` · `dda6be5` → `7a57433`
+
+**BUG-10 · The web chat showed nothing while the agent worked.** A turn with no tool call
+was silent for seconds, then the reply landed at once. Fix: typing dots, a streaming
+caret, and a steady reveal of bursty chunks (latency itself: D5).
+Tests in `Chat.test.tsx` · `57c7d25` → `60fcc60`
+
+**BUG-11 · "Here are your other options" after a taken slot, but none were shown.** The
+code-written outcome promised options it never listed. Fix: the last search minus the
+lost slot is listed, and drawn on the slots card.
+Test `test_agent_handler.py::test_a_taken_slot_lists_the_options_still_available` ·
+`2031167` → `972056b`
+
 ## Not bugs: follow-ups found alongside
 
-| Item | Kind | Plan |
+| Item | Kind | Outcome |
 |---|---|---|
-| The seeded "long conversation" fits in ~3k tokens, so no message is ever dropped from context: context management is never actually exercised | test-data gap | addressed by BUG-3: old sessions are now provably out of scope (`messages_out_of_scope`), and trimming within a session is tested with 500 messages; a long-session eval follows in Phase 8 |
-| PydanticAI's startup banner prints in the chat | UX | done: the chat sets `PYDANTIC_AI_NO_BANNER=1` unless already set |
-| No "working…" indicator during a 5–15 s turn, so the user types ahead; those keystrokes echo into the output and are sent as the next messages | UX | done: a "working…" line prints before each run |
-| `list_memories` returns all 48 saved facts, 30 of them personal notes, on every call (~2.6k tokens; called on 3 of 4 turns in one chat) | token efficiency | done: booking-relevant facts plus a count of the 36 personal notes (listed only when asked), ~3,470 -> ~780 tokens; then TOON for the list-shaped results (D3: −31% per request, same accuracy) |
-| The suggestions hint says "/confirm N"; the user typed a literal N, and a bare `/confirm` just errors | UX | done: hints show a real number ("e.g. /confirm 40"); a bare `/confirm` lists the choices and decides nothing |
-| The model said "I've started the plumber booking", which can read as booked | prompt wording | done: the prompt says that before approval it's looking for or proposing, never a booking "started" |
-| A "hello" takes 3.5–8.6 s before the first word (one Sonnet 5.5 call, ~3.4k tokens in, 52 out). Sonnet 5.5 thinks adaptively by default at `high` effort, and nothing is prompt-cached, so the same ~3.6k tokens of tools and instructions are processed fresh every turn | latency | done (D5): measured with `make latency`. `low` effort halved errand turns (plumber search 13.4 -> 6.1 s to the first word, 6 -> 3 model calls); caching the stable prefix cut cost per turn 55–83%; "hello" stays ~1 s, and the 3.5–8.6 s seen were the API's own variance |
+| The seeded "long conversation" fit in ~3k tokens, so context trimming was never exercised | test-data gap | done: old sessions are out of scope by design (BUG-3), trimming is tested with 500 messages, and an eval runs 55 memories + 300 messages |
+| PydanticAI's startup banner printed in the chat | UX | done: suppressed (`PYDANTIC_AI_NO_BANNER=1`) |
+| No "working…" line during a 5–15 s turn in the terminal chat, so typed-ahead keys were sent as messages | UX | done: a "working…" line before each run |
+| `list_memories` returned all 48 facts (~2.6k tokens) on most turns | token efficiency | done: booking facts plus a count of personal notes (~780 tokens); then TOON tables (D3: −31% per request, same accuracy) |
+| The suggestions hint said "/confirm N" and a user typed a literal N | UX | done: hints show a real number; a bare `/confirm` lists the choices |
+| The model said "I've started the plumber booking", which can read as booked | prompt wording | done: before approval it's "looking for" or "proposing" |
+| A "hello" took 3.5–8.6 s before the first word | latency | done (D5): `low` effort halved errand turns; caching cut cost per turn 55–83%; the variance was the API's own |
 
 <!-- Template
 ## N. <short title>

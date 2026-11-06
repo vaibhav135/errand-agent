@@ -8,7 +8,7 @@ What: `seed_world(conn, clock, user_id=...)` loads `mocks/data/providers.json`
 Why:  The demo and evals need a stable, readable world: every (service, area)
       pair has 3-8 providers (the search contract), the user's history supports
       "same electrician as last time" and "move my AC servicing", and reviews
-      carry the prompt-injection fixtures (see docs/ARCHITECTURE.md).
+      carry the prompt-injection fixtures (see docs/COMPONENTS.md, "Attack fixtures").
 
 How:  - The JSON is validated with pydantic on load, so a typo in a service, area
         or attack label fails loudly instead of seeding bad data.

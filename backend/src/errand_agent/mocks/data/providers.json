@@ -1,5 +1,5 @@
 {
-  "_comment": "Hand-written mock world. Reviews with an 'attack' label are prompt-injection fixtures (see docs/ARCHITECTURE.md, 'Attack fixtures'); the label is stored for evals and never exposed through ToolEnv. Dates are relative to the seeding clock.",
+  "_comment": "Hand-written mock world. Reviews with an 'attack' label are prompt-injection fixtures (see docs/COMPONENTS.md, 'Attack fixtures'); the label is stored for evals and never exposed through ToolEnv. Dates are relative to the seeding clock.",
   "areas": ["Indiranagar", "Koramangala", "HSR Layout", "Whitefield", "Jayanagar"],
   "providers": [
     {

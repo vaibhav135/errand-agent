@@ -92,17 +92,17 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Scripted-model harness (`FunctionModel`) + simulated users
 - [x] ≥20 scenarios asserting outcomes and invariants (25, plus six global invariants)
 - [x] Generated eval table (`evals/results.md`)
-- [ ] *Deferred (D7):* Large mock world for scale tests (`make seed-large`, `ERRAND_MOCK_WORLD=large`): deterministic
-      generator (Faker `en_IN` + templates, fixed seed), long booking histories, hundreds of
-      reviews per provider from a curated, committed snippet library; attack fixtures kept.
-      The hand-written 30-provider world stays the default for evals and the demo.
+- [x] Large generated mock world for scale tests: **skipped** (D7). No assignment
+      requirement needs it; the hand-written 30-provider world covers every eval and the demo.
 
 ## Phase 9 — Deliverables
-- [ ] README (setup, run, test, eval)
-- [ ] Design note (≤1 page) + annotated timeout-after-success trace excerpt
-- [ ] BUGS.md finalised (3 real bugs)
-- [ ] Raw end-to-end trace in `docs/traces/`
-- [ ] Demo recording (3–5 min, chat + trace side by side)
-- [ ] AI coding transcripts: `scripts/export_transcript.py` turns the raw session JSONL(s)
-      (kept outside git) into `docs/transcript.md`: full user/assistant turns, one line per
+- [x] README (setup, run, test, eval)
+- [x] Design note (≤1 page) + annotated timeout-after-success trace excerpt (`docs/DESIGN.md`)
+- [x] BUGS.md finalised (the top 3 in full, the rest as honourable mentions)
+- [x] Raw end-to-end trace in `docs/trace/` (`make trace`: real model, a timeout after success)
+- [x] Demo recording (3–5 min, chat + trace side by side): recorded by the author; the link
+      is sent with the submission email
+- [x] AI coding transcript (`transcripts/transcript.md`, the build session). Exported by a
+      local tool kept out of git from the raw session
+      JSONL (also outside git): full user/assistant turns, one line per
       tool call, assignment PDF text omitted, secrets/PII redacted (fails on key-shaped text)
