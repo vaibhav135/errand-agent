@@ -49,7 +49,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Token estimate + relevant-memory selection within budget
 - [x] History scrubbing: forgotten quotes and saved PII leave stored messages
 - [x] `ContextBuilder` + per-turn `context_sent` log; tests prove forgotten / pending / PII never sent
-- [ ] Inference rules from booking history (pending only)
+- [x] Inference rules from booking history (pending only)
 - [ ] Seed ≥50 memories + long prior conversation (deterministic generator)
 
 ## Phase 5 — Agent

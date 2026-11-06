@@ -452,6 +452,19 @@ User information comes in three kinds, kept in three places:
   blocks re-inference. Changes emit a `memory` trace event; a forget event doesn't repeat
   the value.
 
+### Inference: `memory/inference.py`, `workflow/suggestions.py`
+- **What:** pure rules `infer_from_bookings(bookings)` → suggestions;
+  `suggest_from_history(env, memories, user)` applies them to the provider's real
+  history (`list_bookings`).
+- **Why:** inferred preferences help ("your usual electrician?") but can be wrong, so
+  they are only ever suggested and count only once the user confirms.
+- **How:** deliberately conservative: **usual provider** = 2+ completed bookings with one
+  provider for a service; **earliest start** = 3+ completed or confirmed bookings all
+  starting at 09:00 IST or later. Cancellations are ignored and there is no "avoid"
+  rule (inferring dislike is too error-prone). Every suggestion goes through
+  `propose_inferred`, landing as `pending_confirmation`; forgotten, rejected or known
+  facts are skipped, so repeated runs create nothing new.
+
 ### Profile: `memory/profile.py`
 - **What:** `ProfileStore`: name, phone, email and labelled addresses (one default), plus
   `model_view()`.
