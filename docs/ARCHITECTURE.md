@@ -80,6 +80,7 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 | `ERRAND_MODEL` | unset (e.g. `anthropic:claude-sonnet-5-5`) |
 | `ERRAND_MOCK_SEED` | `42` |
 | `ERRAND_MAX_MODEL_TURNS` / `ERRAND_MAX_TOOL_CALLS` / `ERRAND_MAX_RUN_SECONDS` | `8` / `20` / `60` (per-run hard limits) |
+| `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | unset; standard names, no prefix |
 
 Local values go in `backend/.env` (gitignored), copied from the committed
@@ -402,6 +403,28 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
 |---|---|
 | cancel | a 503 is retried 3× with the same key (backoff 1, 2, 4 s). Still failing → `cancel_pending`: the booking is **still active**; the reconciler retries until `min(approval + 15 min, visit − 1 h)`. Already past that → `cancel_failed` at once ("contact the provider"). Provider refusal → `cancel_failed`. Already cancelled counts as cancelled |
 | reschedule | same price; one call (no transient failures in the contract). `slot_conflict` → back to `collecting`; no longer reschedulable → `reschedule_failed` |
+
+### Reconciler: `workflow/reconciler.py`
+- **What:** `Reconciler.reconcile_once(session_id=None)` settles every open provider
+  action (`in_flight` / `verifying` / `unverified`); `run_periodically()` repeats it.
+- **Why:** restarts and unreachable providers must never leave an outcome guessed: a
+  crash right after the commit point, a timeout whose status checks all failed, a cancel
+  that kept getting 503s.
+- **When:** at app startup (restart recovery), every `ERRAND_RECONCILE_INTERVAL_SECONDS`
+  (30) in the background, and per session at the start of a user run (wired by the
+  agent loop). A pass with work gets its own `trigger="reconcile"` run trace; an empty
+  pass leaves none.
+- **How:**
+
+| Operation | Settled by |
+|---|---|
+| book | `get_booking_status(key)`: booked → confirm, never book again. Not booked → complete the **approved** action once: `book(same hold, same key)` (the provider refuses if the hold expired, so nothing new can happen). Unreachable → stays parked |
+| cancel | `cancel_pending` retried with the same key once due (backoff 30 s, 1, 2, 4, then 5 min); after `min(approval + 15 min, visit − 1 h)` it ends in `cancel_failed` without another call |
+| reschedule | re-sent with the same key (the provider replays or performs it) |
+
+  The reconciler never creates a *new* hold, key or price. Calls go through
+  `GuardedToolEnv` inside `committed()`: traced, never blocked, because this is
+  finishing started work.
 
 ### Errand state machine: `workflow/errands.py`
 - **What:** one transition table per errand kind (`book`, `reschedule`, `cancel`),

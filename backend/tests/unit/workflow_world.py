@@ -105,6 +105,10 @@ class World:
         return errand_id, a.approval_id
 
 
+class ProcessKilled(BaseException):
+    """Simulated crash: a BaseException so no workflow code can catch and handle it."""
+
+
 class ScriptedEnv:
     """Wraps a ToolEnv; lets a test inject behaviour the mock never produces itself."""
 
@@ -112,6 +116,9 @@ class ScriptedEnv:
         self.inner = inner
         self.before_book: Callable[[], None] | None = None
         self.status_error: Exception | None = None
+        # Simulated process death around a provider call: {"book": "before" | "after"}.
+        # "before": the request never left. "after": the provider did it, we never heard.
+        self.crash: dict[str, str] = {}
         self.calls: list[tuple[str, dict[str, Any]]] = []
 
     def __getattr__(self, name: str) -> Callable[..., Awaitable[Any]]:
@@ -123,6 +130,11 @@ class ScriptedEnv:
                 self.before_book()
             if name == "get_booking_status" and self.status_error is not None:
                 raise self.status_error
-            return await target(*args, **kwargs)
+            if self.crash.get(name) == "before":
+                raise ProcessKilled(f"died before {name}")
+            result = await target(*args, **kwargs)
+            if self.crash.get(name) == "after":
+                raise ProcessKilled(f"died after {name}")
+            return result
 
         return call

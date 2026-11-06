@@ -16,6 +16,8 @@ How:  - Startup opens and migrates agent.db, and opens the mock world (migrates 
       - All HTTP routes live under /api, so the built frontend can be served at /.
 """
 
+import asyncio
+import contextlib
 import sqlite3
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -31,6 +33,10 @@ from errand_agent.mocks.world import MockWorld
 from errand_agent.store.db import connect
 from errand_agent.store.migrate import migrate, migrations_for
 from errand_agent.tracing.recorder import JsonlWriter, Tracer
+from errand_agent.workflow.actions import ProviderActionStore
+from errand_agent.workflow.approvals import ApprovalStore
+from errand_agent.workflow.errands import ErrandStore
+from errand_agent.workflow.reconciler import Reconciler
 
 
 @dataclass
@@ -41,6 +47,10 @@ class Services:
     agent_db: sqlite3.Connection
     world: MockWorld
     tracer: Tracer
+    errands: ErrandStore
+    approvals: ApprovalStore
+    actions: ProviderActionStore
+    reconciler: Reconciler
 
     def close(self) -> None:
         self.world.close()
@@ -54,7 +64,21 @@ def build_services(settings: Settings, clock: Clock, ids: IdGen) -> Services:
         settings.mock_db_path, clock=clock, ids=ids, scenario=Scenario(seed=settings.mock_seed)
     )
     tracer = Tracer(clock, ids, subscribers=[JsonlWriter(settings.trace_dir)])
-    return Services(settings, clock, ids, agent_db, world, tracer)
+    errands = ErrandStore(agent_db, clock=clock, ids=ids)
+    approvals = ApprovalStore(agent_db, clock=clock, ids=ids)
+    actions = ProviderActionStore(agent_db, clock=clock)
+    reconciler = Reconciler(
+        conn=agent_db,
+        env=world,
+        errands=errands,
+        approvals=approvals,
+        actions=actions,
+        clock=clock,
+        tracer=tracer,
+    )
+    return Services(
+        settings, clock, ids, agent_db, world, tracer, errands, approvals, actions, reconciler
+    )
 
 
 def create_app(
@@ -71,9 +95,20 @@ def create_app(
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         services = build_services(resolved_settings, resolved_clock, resolved_ids)
         app.state.services = services
+        # Restart recovery: settle anything left unknown by the previous process.
+        await services.reconciler.reconcile_once()
+        loop_task: asyncio.Task[None] | None = None
+        if resolved_settings.reconcile_interval_seconds > 0:
+            loop_task = asyncio.create_task(
+                services.reconciler.run_periodically(resolved_settings.reconcile_interval_seconds)
+            )
         try:
             yield
         finally:
+            if loop_task is not None:
+                loop_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await loop_task
             services.close()
 
     app = FastAPI(title="Errand Agent", lifespan=lifespan)

@@ -35,8 +35,10 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] `GuardedToolEnv`: traced provider calls + per-run limits
 - [x] `propose_booking`: hold + approval + transition in one atomic unit; shows a changed quote
 - [x] Booking executor: persisted idempotency key, timeout → `get_booking_status`, no duplicate bookings
-- [ ] Reconciler: startup pass + 30 s background loop + per-run check; resolves `unverified`;
-      retries `cancel_pending` until min(15 min after approval, 1 h before the visit), then `cancel_failed`
+- [x] Reconciler: startup pass + 30 s background loop; resolves `unverified` / crashed bookings
+      (completes the approved action with the same hold + key); retries `cancel_pending` until
+      min(15 min after approval, 1 h before the visit), then `cancel_failed`
+- [ ] Per-run reconcile check (`reconcile_once(session_id=...)`) wired into the agent loop (Phase 5)
 - [x] Cancel / reschedule with bounded retries
 - [ ] Hard limits: model turns, tool calls, wall-clock; every exit has a user-facing outcome
 

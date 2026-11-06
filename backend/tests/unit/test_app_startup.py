@@ -1,14 +1,18 @@
 from datetime import date
+from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from errand_agent.api.app import Services, create_app
 from errand_agent.core.clock import FakeClock
 from errand_agent.core.config import Settings
+from errand_agent.mocks.scenario import Scenario
 from errand_agent.providers.models import DateRange, SearchOk
 from errand_agent.store.db import connect
 from errand_agent.store.migrate import migrations_for
+from tests.unit.workflow_world import ProcessKilled, ScriptedEnv, World
 
 
 def services(app: FastAPI) -> Services:
@@ -107,3 +111,29 @@ def test_traces_go_to_the_configured_directory(
         pass
 
     assert len(list(app_settings.trace_dir.glob("*.jsonl"))) == 1
+
+
+async def test_startup_finishes_a_booking_left_behind_by_a_crash(
+    app_settings: Settings, tmp_path: Path
+) -> None:
+    # The previous process committed an approved booking, the provider made it,
+    # and the process died before recording the result.
+    world = World(app_settings.data_dir, Scenario(book_outcomes=["success"]))
+    env = ScriptedEnv(world.mock)
+    errand_id, approval_id = await world.approved_errand(env)
+    env.crash["book"] = "after"
+    with pytest.raises(ProcessKilled):
+        await world.flow(env).execute(errand_id, approval_id)
+    assert world.errands.get(errand_id).state == "booking"
+
+    app = create_app(app_settings, clock=world.clock)  # the next process starts
+    async with app.router.lifespan_context(app):
+        pass
+
+    assert world.errands.get(errand_id).state == "booked"
+    assert (
+        world.mock_count(
+            "SELECT count(*) FROM bookings WHERE user_id = 'user_1' AND idempotency_key IS NOT NULL"
+        )
+        == 1
+    )

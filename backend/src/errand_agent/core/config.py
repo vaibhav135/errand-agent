@@ -58,6 +58,9 @@ class Settings(BaseSettings):
     max_tool_calls: int = Field(default=20, ge=1)
     max_run_seconds: float = Field(default=60.0, gt=0)
 
+    # Background reconciler cadence; 0 disables the loop (the startup pass still runs).
+    reconcile_interval_seconds: float = Field(default=30.0, ge=0)
+
     # validation_alias = the standard, unprefixed env var name.
     anthropic_api_key: SecretStr | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
     openai_api_key: SecretStr | None = Field(default=None, validation_alias="OPENAI_API_KEY")
