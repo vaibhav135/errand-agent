@@ -210,8 +210,9 @@ every environment, not only on a default Mac.
 ### Demo API: `api/demo_routes.py`, `mocks/control.py`
 - **What:** `GET /api/demo` -> `{enabled}`; with `ERRAND_DEMO_MODE=true`, `POST
   /api/demo/next-book` `{outcome}`, `/provider-cancels` `{booking_id}`, `/price-drift`
-  `{provider_id, fraction}`, `/reset`, and `GET /api/demo/providers` (names for the
-  price picker).
+  `{provider_id, fraction}`, `/reset`, `GET /api/demo/providers` (names for the
+  price picker), and `GET /api/demo/state` (what is armed: the next booking's scripted
+  outcome until used, and active price changes with provider names).
 - **Why:** the demo is "a strong plus if one failure is handled live"; these make the
   provider misbehave on cue (timeout after success, slot taken, a price that changes
   at hold, a provider cancelling), with no restart.
@@ -1109,6 +1110,10 @@ user message
     a provider's holds quote N% more than search (percent in the UI, a fraction on the
     wire); Reset. Pickers start empty so nothing fires on a default nobody chose; each
     action says what it set in a toast, and bumps `version` so Bookings reloads.
+    What is armed shows as state (`GET /api/demo/state`, from `MockControl.state()`):
+    the scripted outcome's button stays pressed, with "Armed: the next booking will
+    hit …", until a booking uses it; active price changes are listed with a Clear. The
+    state reloads with `version`, so a booking made in the chat un-presses it.
   - Toasts (`ui/sonner.tsx`, one `<Toaster>` in `App`): every change the user makes
     outside the chat turn says how it went: memory confirm / reject / correct / forget,
     the chat's suggestion card, demo actions, new session. Errors are red toasts, except

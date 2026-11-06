@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -32,6 +32,7 @@ const ROUTES = {
     { provider_id: 'plm_quickfix', name: 'QuickFix Plumbing', service: 'plumber', price_inr: 699 },
     { provider_id: 'plm_flowright', name: 'FlowRight Plumbers', service: 'plumber', price_inr: 1200 },
   ],
+  'GET /api/demo/state': { next_book: null, price_drift: [] },
   'POST /api/demo/next-book': { next_book: 'timeout_booked' },
   'POST /api/demo/provider-cancels': { booking_id: 'bk_next', status: 'cancelled_by_provider' },
   'POST /api/demo/price-drift': { provider_id: 'plm_flowright', fraction: 0.2 },
@@ -95,6 +96,42 @@ describe('DemoTab', () => {
       provider_id: 'plm_flowright',
       fraction: 0.2,
     })
+  })
+
+  it('shows what is armed: the next booking’s outcome pressed, and active price changes', async () => {
+    const { calls } = fakeApi({
+      ...ROUTES,
+      'GET /api/demo/state': {
+        next_book: 'slot_taken',
+        price_drift: [{ provider_id: 'plm_flowright', name: 'FlowRight Plumbers', fraction: 0.2 }],
+      },
+    })
+    render(<DemoTab version={0} onChanged={() => undefined} />)
+
+    expect(await screen.findByRole('button', { name: 'Slot taken' })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: 'Times out after succeeding' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.getByText('Armed: the next booking will hit "slot taken".')).toBeInTheDocument()
+    const drift = screen.getByRole('listitem', { name: 'FlowRight Plumbers' })
+    expect(drift).toHaveTextContent('+20% at hold')
+
+    await userEvent.click(within(drift).getByRole('button', { name: 'Clear' }))
+
+    expect(calls.find((c) => c.path === '/api/demo/price-drift')?.body).toEqual({
+      provider_id: 'plm_flowright',
+      fraction: 0,
+    })
+  })
+
+  it('reloads what is armed when something changed elsewhere (a booking used it)', async () => {
+    const { calls } = fakeApi(ROUTES)
+    const { rerender } = render(<DemoTab version={0} onChanged={() => undefined} />)
+    await screen.findByRole('button', { name: 'Slot taken' })
+
+    rerender(<DemoTab version={1} onChanged={() => undefined} />)
+
+    await waitFor(() =>
+      expect(calls.filter((c) => c.path === '/api/demo/state')).toHaveLength(2),
+    )
   })
 
   it('resets everything', async () => {

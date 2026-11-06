@@ -178,6 +178,16 @@ export function getDemoProviders(): Promise<ProviderListing[]> {
   return json('/api/demo/providers')
 }
 
+/** What is armed on the mock: shown pressed in the Demo tab until a booking uses it. */
+export interface DemoState {
+  next_book: string | null // the next booking's scripted outcome
+  price_drift: Array<{ provider_id: string; name: string; fraction: number }>
+}
+
+export function getDemoState(): Promise<DemoState> {
+  return json('/api/demo/state')
+}
+
 export function demoAction(
   action: 'next-book' | 'provider-cancels' | 'price-drift' | 'reset',
   body?: Record<string, unknown>,

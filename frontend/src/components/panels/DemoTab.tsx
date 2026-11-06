@@ -8,7 +8,7 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 
-import { demoAction, getBookings, getDemoProviders } from '@/api/client'
+import { demoAction, getBookings, getDemoProviders, getDemoState } from '@/api/client'
 import { formatSlot } from '@/components/chat/format'
 import { Button } from '@/components/ui/button'
 import { useLoad } from '@/hooks/useLoad'
@@ -26,6 +26,10 @@ const FIELD = 'w-full rounded border bg-background px-2 py-1 text-sm'
 export function DemoTab({ version, onChanged }: { version: number; onChanged: () => void }) {
   const bookings = useLoad(getBookings, version)
   const providers = useLoad(getDemoProviders, version)
+  // What is armed, shown pressed. `version` changes after each action here and after a
+  // turn or card in the chat, so a booking that used the armed outcome un-presses it.
+  const state = useLoad(getDemoState, version)
+  const armedLabel = NEXT_BOOK.find((n) => n.outcome === state.data?.next_book)?.label
   const [bookingId, setBookingId] = useState('')
   const [providerId, setProviderId] = useState('')
   const [percent, setPercent] = useState('20')
@@ -55,17 +59,26 @@ export function DemoTab({ version, onChanged }: { version: number; onChanged: ()
 
       <Section title="Next booking">
         <div className="flex flex-wrap gap-2">
-          {NEXT_BOOK.map(({ outcome, label }) => (
-            <Button
-              key={outcome}
-              size="sm"
-              variant="outline"
-              onClick={() => run('next-book', { outcome }, `Next booking: ${label.toLowerCase()}.`)}
-            >
-              {label}
-            </Button>
-          ))}
+          {NEXT_BOOK.map(({ outcome, label }) => {
+            const armed = state.data?.next_book === outcome
+            return (
+              <Button
+                key={outcome}
+                size="sm"
+                variant={armed ? 'default' : 'outline'} // pressed until a booking uses it
+                aria-pressed={armed}
+                onClick={() => run('next-book', { outcome }, `Next booking: ${label.toLowerCase()}.`)}
+              >
+                {label}
+              </Button>
+            )
+          })}
         </div>
+        {armedLabel && (
+          <p className="text-xs text-muted-foreground">
+            Armed: the next booking will hit "{armedLabel.toLowerCase()}".
+          </p>
+        )}
       </Section>
 
       <Section title="Provider cancels">
@@ -132,6 +145,35 @@ export function DemoTab({ version, onChanged }: { version: number; onChanged: ()
         >
           Change price
         </Button>
+        {(state.data?.price_drift.length ?? 0) > 0 && (
+          <ul aria-label="Active price changes" className="space-y-1">
+            {state.data?.price_drift.map((d) => (
+              <li
+                key={d.provider_id}
+                aria-label={d.name}
+                className="flex items-center justify-between gap-2 rounded border border-primary/50 px-2 py-1"
+              >
+                <span>
+                  {d.name}: {d.fraction > 0 ? '+' : ''}
+                  {Math.round(d.fraction * 100)}% at hold
+                </span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() =>
+                    run(
+                      'price-drift',
+                      { provider_id: d.provider_id, fraction: 0 },
+                      `${d.name}'s price is back to normal.`,
+                    )
+                  }
+                >
+                  Clear
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
       </Section>
 
       <Button size="sm" variant="destructive" onClick={() => run('reset', undefined, 'Back to normal.')}>

@@ -3,7 +3,7 @@
 What: `GET /api/demo` -> {enabled}; with ERRAND_DEMO_MODE=true, `POST /api/demo/
       next-book` {outcome}, `/provider-cancels` {booking_id}, `/price-drift`
       {provider_id, fraction} and `/reset`; `GET /api/demo/providers` lists providers
-      by name for the UI's price picker.
+      by name for the UI's price picker; `GET /api/demo/state` says what is armed.
 
 Why:  The assignment's demo is "a strong plus if one failure is handled live, such as
       prompt injection or timeout-after-success". These make the provider side misbehave
@@ -58,6 +58,21 @@ async def demo_status(request: Request) -> dict[str, bool]:
 @router.get("/providers")
 async def providers(request: Request) -> list[dict[str, object]]:
     return [asdict(p) for p in _services(request).control.providers()]
+
+
+@router.get("/state")
+async def state(request: Request) -> dict[str, object]:
+    """What is armed: the Demo tab shows it pressed until a booking uses it."""
+    control = _services(request).control
+    current = control.state()
+    names = {p.provider_id: p.name for p in control.providers()}
+    return {
+        "next_book": current.next_book,
+        "price_drift": [
+            {"provider_id": pid, "name": names.get(pid, pid), "fraction": fraction}
+            for pid, fraction in sorted(current.price_drift.items())
+        ],
+    }
 
 
 @router.post("/next-book")

@@ -3,7 +3,7 @@
 What: `MockControl(world).cancel_by_provider(booking_id, reason)` simulates a
       provider cancelling a confirmed booking; `script_next_book(outcome)`,
       `set_price_drift(provider_id, fraction)` and `reset()` change the scenario
-      while running, for the live demo (D4).
+      while running, for the live demo (D4); `state()` says what is armed.
 
 Why:  The proactive follow-up scenario needs a provider-side event the agent did
       not cause. It is a *separate* object, not a MockWorld method: the agent only
@@ -34,6 +34,14 @@ class ProviderListing:
     price_inr: int
 
 
+@dataclass(frozen=True)
+class DemoState:
+    """What is armed right now: the Demo tab shows it as pressed."""
+
+    next_book: BookOutcome | None  # the next booking's scripted outcome, until used
+    price_drift: dict[str, float]  # provider_id -> fraction more (or less) at hold
+
+
 class MockControl:
     def __init__(self, world: MockWorld) -> None:
         self._world = world
@@ -57,6 +65,19 @@ class MockControl:
         if fraction == 0:
             drift.pop(provider_id)
         self._world._scenario = self._world._scenario.model_copy(update={"price_drift": drift})
+
+    def state(self) -> DemoState:
+        """The scripted next booking (until a booking uses it) and active price drifts."""
+        scenario = self._world._scenario
+        row = self._world._conn.execute(
+            "SELECT value FROM scenario_state WHERE key = ?", (_BOOK_CURSOR,)
+        ).fetchone()
+        cursor = row["value"] if row else 0
+        scripted = scenario.book_outcomes
+        return DemoState(
+            next_book=scripted[cursor] if cursor < len(scripted) else None,
+            price_drift=dict(scenario.price_drift),
+        )
 
     def providers(self) -> list[ProviderListing]:
         """Every provider by name, for the demo's pickers (ids aren't human-friendly)."""
