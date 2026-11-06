@@ -2,6 +2,7 @@
 
 import sqlite3
 from collections.abc import Awaitable, Callable
+from contextlib import closing
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
@@ -79,10 +80,12 @@ class World:
         )
 
     def mock_exec(self, sql: str, *params: object) -> None:
-        connect(self.mock_path).execute(sql, params)
+        with closing(connect(self.mock_path)) as conn:  # don't hold files open (BUG-9)
+            conn.execute(sql, params)
 
     def mock_count(self, sql: str) -> int:
-        return connect(self.mock_path).execute(sql).fetchone()[0]
+        with closing(connect(self.mock_path)) as conn:
+            return conn.execute(sql).fetchone()[0]
 
     async def comparing_errand(self, provider_id: str = "plm_quickfix") -> tuple[str, Option]:
         errand = self.errands.create("sess_1", "book")

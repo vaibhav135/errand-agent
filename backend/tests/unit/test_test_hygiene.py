@@ -20,7 +20,6 @@ def test_a_test_opens_a_connection_and_keeps_it(tmp_path: Path) -> None:
     _opened.append(connect(tmp_path / "left-open.db"))
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-9: tests leave SQLite connections open")
 def test_it_was_closed_when_that_test_ended() -> None:
     assert _opened, "must run after the test above (file order)"
     with pytest.raises(sqlite3.ProgrammingError):  # "Cannot operate on a closed database"

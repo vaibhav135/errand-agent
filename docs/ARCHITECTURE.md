@@ -124,6 +124,13 @@ handlers in a thread pool). Turning the guard off would let two threads interlea
 transactions on one connection; with it on, a mistake fails loudly. Tests that use
 services directly run the app lifespan in their own loop (`app.router.lifespan_context`).
 
+**Tests close what they open** (BUG-9): `tests/conftest.py` tracks every
+`sqlite3.connect` in a test and closes those connections when the test ends (ones made
+in the app's own thread under `TestClient` are closed by the app's shutdown). Left to
+garbage collection they peaked at ~300 open files, over macOS's default limit of 256;
+now ~23. `make test` runs under `ulimit -n 256` so a future leak fails the gate in
+every environment, not only on a default Mac.
+
 ### App wiring: `api/app.py`
 - **What:** `create_app(settings, clock=, ids=)`; its lifespan builds `Services`
   (settings, clock, ids, `agent.db` connection, mock world, tracer) on
