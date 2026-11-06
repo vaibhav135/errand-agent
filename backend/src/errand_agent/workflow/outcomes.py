@@ -37,6 +37,7 @@ from errand_agent.workflow.booking import Execution
 from errand_agent.workflow.changes import CANCEL_RETRY_WINDOW, ChangeResult
 from errand_agent.workflow.errands import IN_FLIGHT, PARKED, ErrandStore
 from errand_agent.workflow.guarded_env import BudgetMeter, GuardedToolEnv, LimitExceeded, RunBudget
+from errand_agent.workflow.ranking import Option, RankedOptions
 
 logger = logging.getLogger(__name__)
 
@@ -70,10 +71,58 @@ class RunOutcome(BaseModel):
     message: str
     booking: Booking | None = None
     approval: Approval | None = None  # an approval card to show, if any
+    options: list[Option] | None = None  # what's still available to pick (BUG-11)
 
 
 def when(slot: datetime) -> str:
     return f"{slot.astimezone(IST):%a %d %b, %H:%M}"
+
+
+# --- after a slot is lost: what's still on offer (BUG-11) ----------------------------------
+
+ALTERNATIVES = 3  # options listed, and slots per option
+
+
+def still_available(ranked: RankedOptions, provider_id: str, lost: datetime) -> list[Option]:
+    """The last search's options without the slot just lost (top ALTERNATIVES).
+
+    "Still available when I searched": these were free then. Picking one holds it again,
+    which checks with the provider and re-quotes the price, so a stale one can't book.
+    """
+    left: list[Option] = []
+    for o in ranked.options:
+        slots = [s for s in o.slots if not (o.provider_id == provider_id and s == lost)]
+        if slots:
+            left.append(o.model_copy(update={"slots": slots}))
+    return left[:ALTERNATIVES]
+
+
+def with_alternatives(outcome: RunOutcome, options: list[Option]) -> RunOutcome:
+    """A lost slot's outcome, plus what the user can pick instead (code-written: the
+    approval path runs no model, so code must list them or nobody will)."""
+    if not options:
+        return outcome.model_copy(
+            update={"message": f"{outcome.message} Want me to search again?", "options": []}
+        )
+    lines = [
+        f"{i}. {o.name} · ₹{o.price_inr:,} · {_slots_text(o.slots)}"
+        for i, o in enumerate(options, start=1)
+    ]
+    message = (
+        f"{outcome.message}\n\nStill available when I searched:\n\n"
+        + "\n".join(lines)
+        + "\n\nTell me which one, and I'll hold it for your approval."
+    )
+    return outcome.model_copy(update={"message": message, "options": options})
+
+
+def _slots_text(slots: list[datetime]) -> str:
+    """'Sat 07 Nov, 12:00, 13:00': the first few slots, grouped by day."""
+    by_day: dict[str, list[str]] = {}
+    for s in slots[:ALTERNATIVES]:
+        local = s.astimezone(IST)
+        by_day.setdefault(f"{local:%a %d %b}", []).append(f"{local:%H:%M}")
+    return "; ".join(f"{day}, {', '.join(times)}" for day, times in by_day.items())
 
 
 # --- workflow results -> outcomes ------------------------------------------------------------
@@ -104,17 +153,16 @@ def for_execution(result: Execution, *, previous_price: int | None = None) -> Ru
                     f" ₹{d.price_inr}. Approve the new price if you'd like to go ahead."
                 ),
             )
+        # These two say what happened; with_alternatives() adds what's still on offer.
         case "slot_gone":
             return RunOutcome(
                 kind="slot_gone",
-                message="That slot is no longer available, so I didn't go ahead."
-                " Want to choose another time?",
+                message="That slot is no longer available, so I didn't go ahead.",
             )
         case "slot_taken":
             return RunOutcome(
                 kind="slot_taken",
-                message="Someone else took that slot just before I could confirm it."
-                " Here are your other options.",
+                message="Someone else took that slot just before I could confirm it.",
             )
         case "not_booked":
             return RunOutcome(

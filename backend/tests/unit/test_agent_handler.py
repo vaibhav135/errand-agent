@@ -353,7 +353,6 @@ async def test_a_typed_yes_streams_nothing(world: World) -> None:
 # --- after a failed booking: what's still available (BUG-11) -------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-11: a taken slot promises options it never shows")
 async def test_a_taken_slot_lists_the_options_still_available(tmp_path: Path) -> None:
     world = World(tmp_path, Scenario(book_outcomes=["slot_taken"]))
     model = ScriptedModel(

@@ -783,6 +783,12 @@ User information comes in three kinds, kept in three places:
   continue"), or an unexpected exception (logged; if the errand was mid side effect, the
   message says we're checking with the provider instead of "nothing happened"). It
   always finishes the trace with that outcome, so no run ends `unspecified`.
+  A lost slot (`slot_taken`, `slot_gone`) ends on the approval path, with no model, so
+  code says what's left (BUG-11): `still_available()` takes the errand's last search
+  minus the lost slot (top 3), and `with_alternatives()` lists them by day ("Still
+  available when I searched") and puts them in `RunOutcome.options` for the UI, or
+  offers to search again when nothing is left. Picking one holds it again, which
+  re-checks with the provider and re-quotes, so a stale option can't book.
 
 ### Errand state machine: `workflow/errands.py`
 - **What:** one transition table per errand kind (`book`, `reschedule`, `cancel`),

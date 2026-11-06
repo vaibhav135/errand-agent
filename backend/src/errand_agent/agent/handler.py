@@ -63,8 +63,11 @@ from errand_agent.workflow.outcomes import (
     for_change,
     for_execution,
     run_with_outcome,
+    still_available,
     when,
+    with_alternatives,
 )
+from errand_agent.workflow.ranking import Option, RankedOptions
 from errand_agent.workflow.reconciler import Reconciler
 
 logger = logging.getLogger(__name__)
@@ -337,7 +340,10 @@ class MessageHandler:
         )
         if approval.action == "book":
             result = await self._booking_flow(ctx).execute(approval.errand_id, approval_id)
-            return for_execution(result, previous_price=approval.details.price_inr)
+            outcome = for_execution(result, previous_price=approval.details.price_inr)
+            if outcome.kind in ("slot_taken", "slot_gone"):  # say what's left (BUG-11)
+                outcome = with_alternatives(outcome, self._still_available(approval))
+            return outcome
         changes = self._change_flow(ctx)
         if approval.action == "cancel":
             return for_change(await changes.execute_cancel(approval.errand_id, approval_id))
@@ -425,6 +431,14 @@ class MessageHandler:
         )
 
     # --- helpers ---------------------------------------------------------------------
+
+    def _still_available(self, approval: Approval) -> list[Option]:
+        """The errand's last search, minus the slot this approval just lost."""
+        raw = self._errands.options_json(approval.errand_id)
+        if raw is None:
+            return []
+        d = approval.details
+        return still_available(RankedOptions.model_validate_json(raw), d.provider_id, d.slot)
 
     def _live_card(self, cards: list[Approval]) -> Approval | None:
         """The newest card from this run that is still pending (a later step may have
