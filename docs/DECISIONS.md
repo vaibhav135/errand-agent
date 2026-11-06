@@ -395,5 +395,6 @@ the code keeps its guarantees whatever the model does, so several make the model
 misbehave on purpose (lie about a booking, invent a slot, obey an injected review). That
 found BUG-12: a false "booked" in the model's text reached the user.
 
-**Deferred:** the large generated mock world (Phase 8's last item). None of the
-assignment's eval items needs it; it returns only if time allows after Phase 9.
+**Skipped:** the large generated mock world (Phase 8's last item, our own idea for scale
+tests). None of the assignment's requirements needs it, and the hand-written 30-provider
+world covers every eval and the demo.

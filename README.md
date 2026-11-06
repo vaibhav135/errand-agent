@@ -13,7 +13,11 @@ provider's records whenever an outcome is unclear.
 
 ## Quick start
 
-Needs [uv](https://docs.astral.sh/uv/), [bun](https://bun.sh/) and an Anthropic API key.
+> **An Anthropic API key is required to run the app**: the agent is driven by Claude.
+> Put it in `backend/.env` (gitignored, never committed). Tests and evals run offline
+> against a scripted model and need no key.
+
+Also needs [uv](https://docs.astral.sh/uv/) and [bun](https://bun.sh/).
 
 ```sh
 make install                                 # backend + frontend dependencies
@@ -38,11 +42,48 @@ web UI. Tests and evals need **no key**: they run offline against a scripted mod
 
 ## How it works
 
+```mermaid
+flowchart LR
+    U([You]) <-->|messages, clicks · SSE stream| UI[Web UI<br/>chat · trace · memory · bookings]
+    UI <--> H[Message handler]
+
+    H -->|plain yes / no,<br/>card click, slot pick| W
+    H -->|anything else| A[Agent LLM<br/>Claude Sonnet 5.5]
+    A -->|tool calls:<br/>search · propose · remember| W[Workflow, in code<br/>state machine · approvals · booking]
+    A -.->|reviews| R[Review reader LLM<br/>no tools · fixed labels]
+    H --- M[(Memory + context<br/>fixed token budget)]
+
+    W --> G[Guarded tool env<br/>limits · tracing]
+    G --> P[(Mock providers<br/>8 fixed tool contracts)]
+    REC[Reconciler · every 30 s] --> G
+    MON[Provider monitor · every 10 s] -->|list_bookings| P
+    MON -->|a provider cancelled| H
+
+    G --> T[(Run traces · JSONL)]
+    T -.->|live| UI
 ```
-browser ──SSE──▶ FastAPI ──▶ MessageHandler ──┬─ plain "yes"/"no" or a click ──▶ workflow (code)
-                                              └─ anything else ──▶ LLM ──tools──▶ workflow (code)
-                                                                                    │
-                       traces (JSONL) ◀── every step ─────────── mock providers ◀───┘
+
+Only the workflow can touch a provider, and it books only on an approval. A booking from
+request to confirmation, including a timeout the agent recovers from:
+
+```mermaid
+sequenceDiagram
+    actor U as You
+    participant A as Agent (LLM)
+    participant W as Workflow (code)
+    participant P as Provider
+    U->>A: "A plumber in HSR Layout, mornings, under ₹1500"
+    A->>W: search_and_compare
+    W->>P: search_providers
+    A->>W: propose_booking(option, slot)
+    W->>P: hold_slot
+    W-->>U: approval card: provider · slot · price
+    U->>W: Approve (never via the LLM)
+    W->>P: book(hold, idempotency key)
+    P--xW: timeout
+    W->>P: get_booking_status(key)
+    P-->>W: booked
+    W-->>U: "Booked …" (written by code, from the verified result)
 ```
 
 - **Approvals:** each card is fingerprinted (provider, slot, price). Any change voids it,
@@ -98,14 +139,18 @@ approval*.
 
 ## Layout
 
-```
-backend/   Python 3.12 · uv · FastAPI · PydanticAI · SQLite
-  src/errand_agent/  agent/ (LLM, tools, prompts) · workflow/ (state machine, approvals,
-                     booking, reconciler, monitor) · memory/ · mocks/ (provider world)
-                     · tracing/ · api/
-  tests/   unit/ · evals/ (scenarios + harness) · smoke/ (live)
-frontend/  bun · Vite · React · TypeScript · Tailwind · shadcn/ui
-```
+| Path | What's there |
+|---|---|
+| `backend/src/errand_agent/agent/` | the LLM agent: tools, prompts, review reader, claim check |
+| `backend/src/errand_agent/workflow/` | state machine, approvals, booking, reconciler, provider monitor |
+| `backend/src/errand_agent/memory/` | memories, context selection, the seeded demo user |
+| `backend/src/errand_agent/mocks/` | the mock provider world: 8 tool contracts, scripted failures |
+| `backend/src/errand_agent/tracing/` | run traces and cost |
+| `backend/src/errand_agent/api/` | FastAPI routes, SSE streams, terminal chat |
+| `backend/tests/` | `unit/`, `evals/` (25 scenarios + harness), `smoke/` (live model) |
+| `frontend/src/` | the web UI: chat, slots card, Trace / Memory / Bookings / Demo tabs |
 
-Settings live in `backend/.env` ([example](backend/.env.example)). Runtime data (SQLite
-databases, JSONL traces) goes to `backend/var/`.
+Backend: Python 3.12 · uv · FastAPI · PydanticAI · SQLite. Frontend: bun · Vite · React ·
+TypeScript · Tailwind · shadcn/ui. Settings live in `backend/.env`
+([example](backend/.env.example)); runtime data (SQLite databases, JSONL traces) goes to
+`backend/var/`.
