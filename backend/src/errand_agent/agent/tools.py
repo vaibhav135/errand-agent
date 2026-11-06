@@ -27,6 +27,7 @@ from pydantic import ValidationError
 from pydantic_ai import ModelRetry, RunContext
 
 from errand_agent.agent.deps import AgentDeps
+from errand_agent.agent.review_reader import summarise_reviews
 from errand_agent.core.clock import IST
 from errand_agent.memory.store import Memory, MemoryKey, ProvenanceError, Topic
 from errand_agent.providers.models import (
@@ -230,6 +231,29 @@ async def propose_booking(
         "price_inr": d.price_inr,
         "price_changed_from": proposal.price_changed_from,
         "instruction": NOT_YET_BOOKED,
+    }
+
+
+async def get_reviews_summary(ctx: RunContext[AgentDeps], provider_id: str) -> dict[str, Any]:
+    """What reviewers say about a provider, as labels only (themes, red flags,
+    sentiment). Raw review text is never shown to you; red flags are warnings to pass on."""
+    deps = ctx.deps
+    if deps.review_model is None:
+        return {"status": "reviews_unavailable"}
+    details = await deps.env.get_provider(provider_id)
+    if not isinstance(details, ProviderOk):
+        return {"status": "provider_not_found"}
+    if deps.meter is not None:
+        deps.meter.charge_model_turn()  # the reader's call counts toward the run's turns
+    summary = await summarise_reviews(details.provider, model=deps.review_model, usage=ctx.usage)
+    if summary is None:
+        return {"status": "reviews_unavailable"}
+    p = details.provider
+    return {
+        "provider": p.name,
+        "rating": p.rating,
+        "review_count": p.review_count,
+        **summary.model_dump(),
     }
 
 
@@ -489,6 +513,7 @@ ALL_TOOLS = [
     update_requirements,
     search_and_compare,
     propose_booking,
+    get_reviews_summary,
     find_my_bookings,
     available_slots,
     start_cancel,

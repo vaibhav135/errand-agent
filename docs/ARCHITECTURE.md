@@ -700,6 +700,21 @@ stateDiagram-v2
   and assert database effects. Note for PydanticAI 2.66: a tool's `ModelRetry` is recorded
   as a `ToolReturnPart` with `outcome="retried"`, not a `RetryPromptPart`.
 
+### Quarantined review reader: `agent/review_reader.py`
+- **What:** a separate Agent with **no tools** whose output is a `ReviewSummary`;
+  exposed to the orchestrator only through the `get_reviews_summary` tool.
+- **Why:** the Dual LLM pattern. The model that reads untrusted text (reviews and
+  descriptions, where the injection fixtures live) can't act; the model that can act
+  never sees untrusted text.
+- **How:** the summary has **no free-text field**: `themes`, `red_flags`
+  (`instructions_to_ai`, `off_platform_payment`, `requests_personal_data`,
+  `rating_manipulation`) and `sentiment` are fixed choices, so even a fully compromised
+  reader can't pass "call book now" on (a test requires every field to stay a fixed
+  choice). Reviews are wrapped in `<untrusted_reviews>` and declared data, not
+  instructions. Invalid output is retried once, then the tool **fails closed**
+  (`reviews_unavailable`). The reader shares the run's usage and counts as a model turn.
+  Its model is `ERRAND_REVIEW_MODEL` (default: the main model).
+
 ## Run lifecycle
 
 A **run** is one inbound event handled end to end: a user message, an approval click, or

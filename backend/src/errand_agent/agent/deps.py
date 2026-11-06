@@ -18,6 +18,8 @@ How:  - `env` is the GuardedToolEnv for this run: every provider call is traced 
 import sqlite3
 from dataclasses import dataclass, field
 
+from pydantic_ai.models import Model
+
 from errand_agent.core.clock import Clock
 from errand_agent.core.ids import IdGen
 from errand_agent.memory.profile import ProfileStore
@@ -48,6 +50,7 @@ class AgentDeps:
     user_message: str
     run: RunTrace | None = None
     meter: BudgetMeter | None = None
+    review_model: Model | None = None  # the quarantined review reader's model
     errand_id: str | None = None
     cards: list[Approval] = field(default_factory=list)
 
