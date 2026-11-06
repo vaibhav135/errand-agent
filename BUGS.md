@@ -18,7 +18,7 @@ listed at the end.
 | 9 | The test suite runs out of file descriptors on a default Mac | medium | fixed |
 | 10 | The web chat shows nothing while the agent works on a reply | medium | fixed |
 | 11 | "Here are your other options" after a taken slot, but none are shown | medium | fixed |
-| 12 | The model's false "booked" reaches the user unchecked | high | open |
+| 12 | The model's false "booked" reaches the user unchecked | high | fixed |
 
 ## 1. Rollback masked the real database error
 - **What broke:** When a write failed in a way that makes SQLite end the transaction
@@ -258,7 +258,7 @@ listed at the end.
 - **Commits:** repro `2031167` · fix `972056b`
 
 ## 12. The model's false "booked" reaches the user unchecked
-- **Status:** open
+- **Status:** fixed
 - **What broke:** with a card waiting for approval, a (scripted) model replied "All
   done, your plumber is booked!". Nothing was booked, and approval enforcement held, but
   that sentence was shown to the user as is.
@@ -268,9 +268,18 @@ listed at the end.
   guarantee here: a prompt is a request, not a check.
 - **How found:** an eval scenario written to try it (Phase 8, "a misbehaving model"),
   not by a user.
-- **Fix:**
-- **Regression test:**
-- **Commits:**
+- **Fix:** before a model turn's reply is saved, `agent/claims.py` checks it against
+  verified state. A claim that the open request is done ("booked", "cancelled", "moved",
+  with no negation or hedge just before it) gets a code-written note after it: "Note
+  from the app: nothing is booked yet. The … card … is still waiting for your
+  approval." The model's text is kept (nothing silently dropped), the verified status
+  follows it, and the correction is traced (`claim_corrected`). A model turn never
+  completes a request, so such a claim is always unverified; a mention of a past booking
+  with nothing open is left alone.
+- **Regression test:** `backend/tests/evals/test_approval.py::test_a_false_booked_claim_is_corrected`
+  (and the compromised-model scenario's "cancelled" claim), plus the phrase table in
+  `backend/tests/unit/test_agent_claims.py` (claims vs negations and hedges).
+- **Commits:** repro `84acbdd` · fix `d01e810`
 
 ## Not bugs: follow-ups found alongside
 
