@@ -10,7 +10,7 @@ listed at the end.
 | 1 | Rollback masked the real database error | medium | fixed |
 | 2 | Seeded history contradicts the mock world | high | fixed |
 | 3 | The context budget isn't a cap | high | fixed |
-| 4 | Slash commands leak to the model | low | open |
+| 4 | Slash commands leak to the model | low | fixed |
 | 5 | The agent's own tool calls aren't traced | medium | open |
 | 6 | An inference can contradict an explicit preference | medium | open |
 
@@ -83,15 +83,16 @@ listed at the end.
 - **Commits:** repro `9874509` · fix `b1ea3fe`
 
 ## 4. Slash commands leak to the model
-- **Status:** open
+- **Status:** fixed
 - **What broke:** `/trace` (no longer a chat command after the CLI was slimmed down) was
   sent to the model as a user message; it replied "I don't have a /trace command".
 - **Why:** `chat_loop` handles only `/quit` and `/exit`; any other text, including
   `/`-prefixed commands, goes to the handler.
 - **How found:** live chat.
-- **Fix:** -
-- **Regression test:** -
-- **Commits:** -
+- **Fix:** anything starting with `/` is a chat command handled in the CLI; unknown ones
+  get "Unknown command". None reaches the agent or the saved conversation.
+- **Regression test:** `backend/tests/unit/test_chat_cli.py::test_unknown_commands_never_reach_the_model`
+- **Commits:** repro `5705b2c` · fix `02234a3`
 
 ## 5. The agent's own tool calls aren't traced
 - **Status:** open
@@ -132,8 +133,8 @@ listed at the end.
 | Item | Kind | Plan |
 |---|---|---|
 | The seeded "long conversation" fits in ~3k tokens, so no message is ever dropped from context: context management is never actually exercised | test-data gap | addressed by BUG-3: old sessions are now provably out of scope (`messages_out_of_scope`), and trimming within a session is tested with 500 messages; a long-session eval follows in Phase 8 |
-| PydanticAI's startup banner prints in the chat | UX | set `PYDANTIC_AI_NO_BANNER=1` |
-| No "working…" indicator during a 5–15 s turn, so the user types ahead; those keystrokes echo into the output and are sent as the next messages | UX | print a working line before each run |
+| PydanticAI's startup banner prints in the chat | UX | done: the chat sets `PYDANTIC_AI_NO_BANNER=1` unless already set |
+| No "working…" indicator during a 5–15 s turn, so the user types ahead; those keystrokes echo into the output and are sent as the next messages | UX | done: a "working…" line prints before each run |
 
 <!-- Template
 ## N. <short title>
