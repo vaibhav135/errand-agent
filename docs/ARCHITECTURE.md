@@ -349,6 +349,18 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
   the right addition if approvals ever travelled outside the system, e.g. as
   "click to approve" links in email or SMS.
 
+### Booking flow: `workflow/booking.py`
+- **What:** `BookingFlow.propose(errand, option, slot)` (execute: next commit).
+- **Why:** the model never books; it can only propose. A proposal becomes a provider
+  hold plus a pending approval, and only the user's approval can lead to a booking.
+- **How:** preconditions (a book errand in `comparing`) are checked before calling the
+  provider, so a wrong-state call places no hold. The hold is placed first, then the
+  errand's hold, the approval request and the `option_proposed` transition are saved in
+  one `atomic` unit (if those writes failed, the provider hold simply expires). The
+  approval carries the **quoted** price; when it differs from the search price,
+  `price_changed_from` lets the approval card say so. An unavailable slot leaves the
+  errand in `comparing` with no approval.
+
 ### Errand state machine: `workflow/errands.py`
 - **What:** one transition table per errand kind (`book`, `reschedule`, `cancel`),
   `next_state()`, and `ErrandStore` (errands, their requirements and an append-only

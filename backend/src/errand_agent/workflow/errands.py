@@ -182,6 +182,8 @@ class Errand(BaseModel):
     state: State
     requirements: Requirements
     booking_id: str | None
+    hold_id: str | None
+    hold_expires_at: datetime | None
     created_at: datetime
     updated_at: datetime
 
@@ -272,6 +274,15 @@ class ErrandStore:
         ).fetchall()
         return [tuple(r) for r in rows]  # type: ignore[misc]
 
+    def set_hold(self, errand_id: str, hold_id: str, expires_at: datetime) -> Errand:
+        with atomic(self._conn):
+            self._conn.execute(
+                "UPDATE errands SET hold_id = ?, hold_expires_at = ?, updated_at = ?"
+                " WHERE errand_id = ?",
+                (hold_id, utc_text(expires_at), utc_text(self._clock.now()), errand_id),
+            )
+        return self.get(errand_id)
+
     def set_requirements(self, errand_id: str, requirements: Requirements) -> Errand:
         with atomic(self._conn):
             current = self.get(errand_id)
@@ -294,6 +305,10 @@ def _errand(row: sqlite3.Row) -> Errand:
         state=row["state"],
         requirements=Requirements.model_validate_json(row["requirements"]),
         booking_id=row["booking_id"],
+        hold_id=row["hold_id"],
+        hold_expires_at=(
+            datetime.fromisoformat(row["hold_expires_at"]) if row["hold_expires_at"] else None
+        ),
         created_at=datetime.fromisoformat(row["created_at"]),
         updated_at=datetime.fromisoformat(row["updated_at"]),
     )
