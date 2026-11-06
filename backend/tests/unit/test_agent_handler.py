@@ -18,7 +18,7 @@ from errand_agent.workflow.guarded_env import RunBudget
 from errand_agent.workflow.monitor import ProviderMonitor, ProviderNotice
 from tests.unit.agent_script import ScriptedModel, call, say
 from tests.unit.test_agent_loop import Streaming
-from tests.unit.test_agent_tools import first_slot
+from tests.unit.test_agent_tools import ASK, FULL, first_slot
 from tests.unit.test_workflow_changes import COOLBREEZE
 from tests.unit.workflow_world import ScriptedEnv, World
 
@@ -348,6 +348,36 @@ async def test_a_typed_yes_streams_nothing(world: World) -> None:
     )
 
     assert reply.outcome.kind == "booked" and seen == []  # decided in code, no model
+
+
+# --- after a failed booking: what's still available (BUG-11) -------------------------------
+
+
+@pytest.mark.xfail(strict=True, reason="BUG-11: a taken slot promises options it never shows")
+async def test_a_taken_slot_lists_the_options_still_available(tmp_path: Path) -> None:
+    world = World(tmp_path, Scenario(book_outcomes=["slot_taken"]))
+    model = ScriptedModel(
+        [call("update_requirements", **FULL)],
+        [call("search_and_compare")],
+        lambda m: [call("propose_booking", option_number=1, slot=first_slot(m))],
+        [say("Shall I book it?")],
+    )
+    h = handler(world, model.model())
+    card = (await send(h, ASK)).outcome.approval
+    assert card is not None
+    taken = card.details
+
+    reply = await send(h, "yes")
+
+    assert reply.outcome.kind == "slot_taken"
+    still = reply.outcome.options
+    assert still, "the options from the last search, to choose from"
+    assert all(  # the slot that was just taken isn't offered again
+        not (o.provider_id == taken.provider_id and taken.slot in o.slots) for o in still
+    )
+    message = reply.outcome.message
+    assert "Still available when I searched" in message
+    assert all(o.name in message for o in still)
 
 
 # --- reconcile first ----------------------------------------------------------------------
