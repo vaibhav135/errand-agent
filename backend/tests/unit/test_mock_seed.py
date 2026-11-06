@@ -9,7 +9,7 @@ import pytest
 from errand_agent.core.clock import IST, FakeClock
 from errand_agent.mocks.rand import keyed_unit
 from errand_agent.mocks.schedule import slot_schedule
-from errand_agent.mocks.seed import AREAS, ATTACK_CATEGORIES, SERVICES, seed_world
+from errand_agent.mocks.seed import AREAS, ATTACK_CATEGORIES, SERVICES, load_seed, seed_world
 from errand_agent.store.db import connect
 from errand_agent.store.migrate import migrate, migrations_for
 
@@ -152,7 +152,7 @@ def test_history_is_placed_relative_to_the_seeding_clock(conn, clock) -> None:
     seed_world(conn, clock, user_id="user_1")
 
     rows = {
-        r["service"]: r
+        r["booking_id"]: r
         for r in conn.execute(
             "SELECT b.*, p.name FROM bookings b JOIN providers p USING (provider_id)"
             " WHERE b.user_id = 'user_1'"
@@ -160,14 +160,15 @@ def test_history_is_placed_relative_to_the_seeding_clock(conn, clock) -> None:
     }
     today_ist = NOW.astimezone(IST).date()
 
-    past = rows["electrician"]
+    assert len(rows) == len(load_seed().history)
+    past = rows["bk_hist_sparks"]
     assert past["name"] == "Sparks Electricals"
     assert past["status"] == "completed"
     assert datetime.fromisoformat(past["slot"]) == datetime.combine(
         today_ist - timedelta(days=24), datetime.min.time(), IST
     ).replace(hour=11)
 
-    upcoming = rows["ac_servicing"]
+    upcoming = rows["bk_hist_coolbreeze"]
     assert upcoming["name"] == "CoolBreeze AC Care"
     assert upcoming["status"] == "confirmed"
     assert datetime.fromisoformat(upcoming["slot"]) == datetime.combine(
