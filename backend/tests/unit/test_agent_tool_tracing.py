@@ -102,3 +102,19 @@ async def test_show_suggestions_hands_them_to_code_not_the_model(world: World) -
     seen = "\n".join(model.received)
     assert "Sparks" not in seen and "CoolBreeze" not in seen
     assert "'shown': 2" in seen or '"shown": 2' in seen  # only how many
+
+
+@pytest.mark.xfail(strict=True, reason="BUG-8: the model doesn't know what code showed the user")
+async def test_next_turn_the_model_knows_suggestions_were_shown(world: World) -> None:
+    seed_demo_user(world.conn, world.clock)
+    model = Seeing(
+        [ToolCallPart("show_suggestions", {})], [TextPart("Here they are.")], [TextPart("ok")]
+    )
+
+    first = await send(world, model, "what have you noticed about me?")
+    await send(world, model, "N")  # the user's confused reply, as in the live chat
+
+    next_turn = model.received[-1]
+    assert "The app showed the user 2 suggestions to review" in next_turn
+    assert "Sparks" not in next_turn and "CoolBreeze" not in next_turn  # count, not content
+    assert "[The app showed" not in first.outcome.message  # the note is for the model only
