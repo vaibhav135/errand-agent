@@ -117,6 +117,11 @@ lost slot is listed, and drawn on the slots card.
 Test `test_agent_handler.py::test_a_taken_slot_lists_the_options_still_available` ·
 `2031167` → `972056b`
 
+**BUG-13 · A provider's cancellation went to a chat the user had left.** (open) The
+notice and the replacement card went to the session the booking was made in; a user in
+a newer chat saw nothing, as the web UI listens to the open session only.
+Test `test_provider_monitor.py::test_the_users_newest_session_is_told_even_if_booked_in_an_older_one`
+
 ## Not bugs: follow-ups found alongside
 
 | Item | Kind | Outcome |
