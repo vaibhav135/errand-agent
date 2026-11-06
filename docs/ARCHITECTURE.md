@@ -166,6 +166,10 @@ every environment, not only on a default Mac.
   first use (`Services.handler()`), so the app starts without a key: a turn then
   answers 503 saying what to set. History hides the code-written "[The app showed…]"
   note (BUG-8), which is for the model, not the screen.
+  **Card buttons:** `POST /api/approvals/{id}/decision` `{approve, fingerprint}` answers
+  with plain JSON (decided in code, no model, nothing to stream). The UI sends back the
+  fingerprint of the card it displayed, so a card whose details changed since is not
+  approved: the reply says so and carries the current card.
 
 ### Chat CLI: `api/chat.py` (`make chat`)
 - **What:** a read-reply loop for the demo user over the same handler, databases and
@@ -903,7 +907,12 @@ user message
   an ordinary message. Two messages in one session at the same time is left to a
   per-session lock in the API layer. `handle(..., on_text=, on_tool=)` streams a model
   turn's text and announces its tools (D4); a typed or clicked yes / no streams nothing,
-  since no model is involved.
+  since no model is involved. `decide(session_id=, approval_id=, fingerprint=,
+  approve=)` is the card's buttons: the same confirm / decline code as a typed yes / no
+  (granted `via="button"`), except that Decline declines that card only. A fingerprint
+  that doesn't match the current card is refused with the current card; a card already
+  decided (a double click) does nothing more. The click is saved as a code-written user
+  line ("[Approved on the card: …]") so the model's next turn knows what was decided.
 
   Next turn the model sees only its saved *text*, not what code drew. So when code
   showed suggestions, the saved reply ends with `[The app showed the user N

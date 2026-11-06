@@ -68,7 +68,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 ## Phase 6 — API & Web UI (design: docs/DECISIONS.md, D4)
 - [x] Streaming in the run loop: text deltas and progress lines, tested offline
 - [x] Sessions + messages endpoints (`POST` answers with an SSE stream), per-session lock
-- [ ] Approval decision endpoint: the button path (`handler.decide`), same as typed yes/no
+- [x] Approval decision endpoint: the button path (`handler.decide`), same as typed yes/no
 - [ ] Memory endpoints (inspect, confirm / reject suggestions, correct, forget) + bookings
 - [ ] `GET /events` push stream + past runs for the trace pane
 - [ ] Demo endpoints (`ERRAND_DEMO_MODE`): timeout after success, slot taken, provider

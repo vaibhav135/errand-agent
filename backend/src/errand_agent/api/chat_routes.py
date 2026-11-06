@@ -82,6 +82,34 @@ def sse(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, default=str)}\n\n"
 
 
+class DecisionIn(BaseModel):
+    approve: bool
+    fingerprint: str  # of the card the UI displayed: a changed card isn't approved
+
+
+@router.post("/approvals/{approval_id}/decision")
+async def decide(approval_id: str, body: DecisionIn, request: Request) -> dict[str, Any]:
+    """A card's Approve / Decline button: decided in code, no model, so plain JSON."""
+    services = _services(request)
+    try:
+        approval = services.approvals.get(approval_id)
+    except KeyError as exc:
+        raise HTTPException(404, f"no approval {approval_id!r}") from exc
+    session_id = services.errands.get(approval.errand_id).session_id
+    try:
+        handler = services.handler()
+    except ModelNotConfigured as exc:
+        raise HTTPException(503, str(exc)) from exc
+    async with services.lock_for(session_id):
+        reply = await handler.decide(
+            session_id=session_id,
+            approval_id=approval_id,
+            fingerprint=body.fingerprint,
+            approve=body.approve,
+        )
+    return reply_json(reply)
+
+
 @router.post("/sessions", status_code=201)
 async def create_session(request: Request) -> dict[str, str]:
     services = _services(request)

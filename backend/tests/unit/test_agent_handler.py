@@ -233,6 +233,83 @@ async def test_a_limit_ends_with_a_saved_honest_reply(world: World) -> None:
     assert run_events(world, reply.run_id, "run_finished")[0]["outcome"] == "limit_reached"
 
 
+# --- the card's buttons: the same decisions, clicked ------------------------------------------
+
+
+async def decide(world: World, approve: bool, fingerprint: str | None = None) -> Reply:
+    [card] = world.approvals.pending_for_session("sess_1")
+    return await handler(world).decide(
+        session_id="sess_1",
+        approval_id=card.approval_id,
+        fingerprint=card.fingerprint if fingerprint is None else fingerprint,
+        approve=approve,
+    )
+
+
+async def test_approve_on_the_card_books_without_the_model(world: World) -> None:
+    errand_id = await pending_card(world)
+
+    reply = await decide(world, approve=True)
+
+    assert reply.outcome.kind == "booked"
+    assert world.errands.get(errand_id).state == "booked"
+    assert bookings(world) == 1
+    granted = [e.to_dict() for e in world.events if e.type == "approval"]
+    assert any(e.get("status") == "granted" and e.get("via") == "button" for e in granted)
+    user_line = saved(world)[0]
+    assert user_line[0] == "user" and user_line[1].startswith("[Approved on the card:")
+
+
+async def test_a_card_whose_details_changed_is_not_approved(world: World) -> None:
+    await pending_card(world)
+
+    reply = await decide(world, approve=True, fingerprint="not-what-is-current")
+
+    assert bookings(world) == 0
+    assert reply.outcome.kind == "needs_approval"
+    assert "changed" in reply.outcome.message
+    assert reply.outcome.approval is not None  # the current card, to review again
+
+
+async def test_decline_on_the_card_declines_only_that_card(world: World) -> None:
+    errand_id = await pending_card(world)
+    cancel = world.errands.create("sess_1", "cancel", booking_id=COOLBREEZE)
+    await world.change_flow().propose_cancel(cancel.errand_id)
+    book_card = world.approvals.live_for_errand(errand_id)
+    assert book_card is not None
+
+    reply = await handler(world).decide(
+        session_id="sess_1",
+        approval_id=book_card.approval_id,
+        fingerprint=book_card.fingerprint,
+        approve=False,
+    )
+
+    assert reply.outcome.kind == "answered"
+    assert world.errands.get(errand_id).state == "comparing"
+    [still_pending] = world.approvals.pending_for_session("sess_1")
+    assert still_pending.errand_id == cancel.errand_id
+
+
+async def test_a_second_click_books_nothing_more(world: World) -> None:
+    await pending_card(world)
+    [card] = world.approvals.pending_for_session("sess_1")
+    h = handler(world)
+    args = {
+        "session_id": "sess_1",
+        "approval_id": card.approval_id,
+        "fingerprint": card.fingerprint,
+        "approve": True,
+    }
+
+    first = await h.decide(**args)
+    second = await h.decide(**args)
+
+    assert first.outcome.kind == "booked"
+    assert second.outcome.kind == "answered" and "already" in second.outcome.message
+    assert bookings(world) == 1
+
+
 # --- streaming (D4) -----------------------------------------------------------------------
 
 

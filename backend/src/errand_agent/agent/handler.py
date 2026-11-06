@@ -49,7 +49,7 @@ from errand_agent.memory.tokens import estimate_tokens
 from errand_agent.providers.tool_env import ToolEnv
 from errand_agent.tracing.recorder import Tracer
 from errand_agent.workflow.actions import ProviderActionStore
-from errand_agent.workflow.approvals import Approval, ApprovalStore, is_explicit_no
+from errand_agent.workflow.approvals import Approval, ApprovalStore, Via, is_explicit_no
 from errand_agent.workflow.booking import BookingFlow
 from errand_agent.workflow.changes import ChangeFlow
 from errand_agent.workflow.context import ContextBudget, ContextBuilder
@@ -62,6 +62,7 @@ from errand_agent.workflow.outcomes import (
     for_change,
     for_execution,
     run_with_outcome,
+    when,
 )
 from errand_agent.workflow.reconciler import Reconciler
 
@@ -193,6 +194,76 @@ class MessageHandler:
         )
         return Reply(outcome=outcome, run_id=run_id, suggestions=tuple(turn.shown))
 
+    async def decide(
+        self, *, session_id: str, approval_id: str, fingerprint: str, approve: bool
+    ) -> Reply:
+        """A card's Approve / Decline button: the same decision as a typed yes / no,
+        decided in code. `fingerprint` is the one the UI displayed: if the card's details
+        changed since, nothing happens and the current card comes back. Raises KeyError
+        for an approval that isn't this session's."""
+        approval = self._approvals.get(approval_id)
+        if self._errands.get(approval.errand_id).session_id != session_id:
+            raise KeyError(f"no approval {approval_id!r} in session {session_id!r}")
+        try:
+            await self._reconciler.reconcile_once(session_id=session_id)
+        except Exception:
+            logger.exception("per-run reconcile failed")
+        d = approval.details
+        verb = "Approved" if approve else "Declined"
+        self._conversation.append(  # the click, recorded for the model's next turn
+            session_id,
+            "user",
+            f"[{verb} on the card: {d.provider_name}, {when(d.slot)}, ₹{d.price_inr}]",
+        )
+
+        run_id = ""
+
+        async def body(ctx: RunContext) -> RunOutcome:
+            nonlocal run_id
+            run_id = ctx.run.run_id
+            return await self._decide(ctx, session_id, approval_id, fingerprint, approve)
+
+        outcome = await run_with_outcome(
+            self._tracer,
+            session_id=session_id,
+            trigger="approval_click",
+            budget=self._budget,
+            env=self._env,
+            clock=self._clock,
+            errands=self._errands,
+            body=body,
+        )
+        self._conversation.append(session_id, "assistant", outcome.message, run_id=run_id)
+        return Reply(outcome=outcome, run_id=run_id)
+
+    async def _decide(
+        self, ctx: RunContext, session_id: str, approval_id: str, fingerprint: str, approve: bool
+    ) -> RunOutcome:
+        current = self._approvals.get(approval_id)
+        ctx.errand_id = current.errand_id
+        if current.status != "pending":  # a double click, or decided elsewhere
+            return RunOutcome(
+                kind="answered", message="That card was already decided, so nothing more was done."
+            )
+        if fingerprint != current.fingerprint:
+            return RunOutcome(
+                kind="needs_approval",
+                message="The details on that card changed since it was shown, so I didn't go"
+                " ahead. Please check the current details.",
+                approval=current,
+            )
+        if not approve:
+            decline_pending(
+                self._conn,
+                self._approvals,
+                self._errands,
+                session_id,
+                run=ctx.run,
+                only=approval_id,
+            )
+            return RunOutcome(kind="answered", message=DECLINED[current.action])
+        return await self._confirm(ctx, approval_id, via="button")
+
     # --- the three paths -------------------------------------------------------------
 
     async def _respond(
@@ -207,13 +278,16 @@ class MessageHandler:
             ctx, session_id=session_id, user_id=user_id, text=text, turn=turn
         )
 
-    async def _confirm(self, ctx: RunContext, approval_id: str) -> RunOutcome:
+    async def _confirm(
+        self, ctx: RunContext, approval_id: str, *, via: Via = "typed"
+    ) -> RunOutcome:
         approval = self._approvals.get(approval_id)
         ctx.errand_id = approval.errand_id
         # A card's details never change (new details mean a new approval), so the
-        # pending approval's fingerprint is exactly what the user was shown.
+        # pending approval's fingerprint is exactly what the user was shown. (A click
+        # also checks the fingerprint the UI sent back: see _decide.)
         self._approvals.grant(
-            approval_id, presented_fingerprint=approval.fingerprint, via="typed", run=ctx.run
+            approval_id, presented_fingerprint=approval.fingerprint, via=via, run=ctx.run
         )
         if approval.action == "book":
             result = await self._booking_flow(ctx).execute(approval.errand_id, approval_id)

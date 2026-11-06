@@ -99,6 +99,33 @@ def test_without_a_key_a_turn_says_what_to_set(
     assert "ANTHROPIC_API_KEY" in response.json()["detail"]
 
 
+def test_the_cards_approve_button_decides_in_code(
+    app_settings: Settings, app_clock: FakeClock
+) -> None:
+    model = FunctionModel(
+        stream_function=Streaming(("start_cancel", {"booking_id": "bk_hist_coolbreeze"}), ["Ok?"])
+    )
+    with client_for(app_settings, app_clock, model) as client:
+        session_id = new_session(client)
+        card = events(client, session_id, "cancel my AC servicing")[-1][1]["approval"]
+
+        response = client.post(
+            f"/api/approvals/{card['approval_id']}/decision",
+            json={"approve": True, "fingerprint": card["fingerprint"]},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["kind"] == "cancelled"
+
+
+def test_deciding_an_unknown_card_is_404(chat: TestClient) -> None:
+    response = chat.post(
+        "/api/approvals/appr_nope/decision", json={"approve": True, "fingerprint": "x"}
+    )
+
+    assert response.status_code == 404
+
+
 def test_one_turn_at_a_time_per_session(chat: TestClient) -> None:
     services: Services = chat.app.state.services  # type: ignore[attr-defined]
 
