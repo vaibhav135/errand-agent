@@ -74,7 +74,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Demo endpoints (`ERRAND_DEMO_MODE`): timeout after success, slot taken, provider
       cancels, price change at hold
 - [x] Frontend: Vitest, API client, layout shell (chat + tabbed side panel)
-- [ ] Chat: streamed replies, progress lines, Stop; ApprovalCard / SuggestionsCard /
+- [x] Chat: streamed replies, progress lines, Stop; ApprovalCard / SuggestionsCard /
       BookingCard
 - [ ] TracePane (runs, one-line events, expand to JSON)
 - [ ] Memory and Bookings tabs

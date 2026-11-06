@@ -38,14 +38,18 @@ export class SseParser {
   }
 }
 
-/** Yields {event, data} for each frame of a streamed response body. */
+/** Yields {event, data} for each frame of a streamed response body. Aborting `signal`
+ * cancels the reader, so a pending read() returns at once and the loop ends. */
 export async function* readSse(
   body: ReadableStream<Uint8Array>,
+  signal?: AbortSignal,
 ): AsyncGenerator<{ event: string; data: unknown }> {
   const queue: Array<{ event: string; data: unknown }> = []
   const parser = new SseParser((event, data) => queue.push({ event, data }))
   const decoder = new TextDecoder() // stream mode: a UTF-8 character split across chunks survives
   const reader = body.getReader()
+  const stop = () => void reader.cancel()
+  signal?.addEventListener('abort', stop, { once: true })
   try {
     for (;;) {
       const { done, value } = await reader.read()
@@ -54,6 +58,7 @@ export async function* readSse(
       while (queue.length > 0) yield queue.shift()!
     }
   } finally {
+    signal?.removeEventListener('abort', stop)
     reader.releaseLock()
   }
 }

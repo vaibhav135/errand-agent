@@ -974,6 +974,16 @@ user message
   - `src/hooks/useSession.ts`: the session id is remembered in localStorage (a
     per-browser convenience); a remembered session that's gone on the server is
     replaced, not shown as errors.
+  - Chat (`src/components/chat/`, `src/hooks/useChat.ts`): `tool` events become a
+    transient progress line ("Searching providers…"); `text` chunks fill the reply
+    bubble as they arrive; the `final` reply then replaces the bubble's text and carries
+    the cards, drawn by code from verified data (`ApprovalCard` with Approve / Decline,
+    sending back the fingerprint it displayed; `BookingCard`; `SuggestionsCard` with
+    Confirm / Reject). Replies render as Markdown (react-markdown, which doesn't render
+    raw HTML, so model text can't inject markup). Stop aborts the display only (the
+    reader is cancelled at once): the turn still finishes on the server and its reply is
+    in the history after a reload. Enter sends, Shift+Enter is a new line. A new
+    session mounts a fresh chat (keyed by session id).
   - Tests: Vitest + Testing Library on jsdom (`vitest.config.ts` reuses the Vite config,
     so `@/` resolves the same); `src/test/fakeApi.ts` routes `fetch` by method and path.
     `make test` runs backend and frontend.

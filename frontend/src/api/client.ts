@@ -71,12 +71,13 @@ export async function sendMessage(
     }),
   )
   if (!res.body) throw new ApiError(res.status, 'the turn came back without a body')
-  for await (const { event, data } of readSse(res.body)) {
+  for await (const { event, data } of readSse(res.body, handlers.signal)) {
     if (event === 'tool') handlers.onTool?.((data as { tool: string }).tool)
     else if (event === 'text') handlers.onText?.((data as { chunk: string }).chunk)
     else if (event === 'trace') handlers.onTrace?.(data as TraceEvent)
     else if (event === 'final') return data as Reply
   }
+  if (handlers.signal?.aborted) throw new DOMException('stopped', 'AbortError')
   throw new ApiError(res.status, 'the turn ended without a reply')
 }
 
