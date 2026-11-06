@@ -20,6 +20,8 @@ How:  - Every value must appear in the user's own message (phone compared digits
         trace sanitizer redacts secrets by key name and wouldn't recognise a phone
         number, so values simply never enter an event.
       - Forgetting a field sets it to NULL; removing an address deletes the row.
+      - Saved values are scrubbed from the user's stored messages ("[phone saved]",
+        ...), so the model sees a typed value only in the turn that extracts it.
 """
 
 import re
@@ -30,6 +32,7 @@ from pydantic import BaseModel, ConfigDict
 
 from errand_agent.core.clock import Clock, utc_text
 from errand_agent.core.ids import IdGen
+from errand_agent.memory.scrub import Replacement, phone_pattern, phrase_pattern, scrub_history
 from errand_agent.memory.store import ProvenanceError
 from errand_agent.store.db import after_commit, atomic
 from errand_agent.tracing.recorder import RunTrace
@@ -147,18 +150,22 @@ class ProfileStore:
         run: RunTrace | None = None,
     ) -> Profile:
         changes: dict[str, str] = {}
+        scrubs: list[Replacement] = []
         if name is not None:
             _require_said(name, user_message, what="name")
             changes["name"] = name.strip()
+            scrubs.append((phrase_pattern(name), "[name saved]"))
         if phone is not None:
             normalised = normalise_phone(phone)
             _require_said(phone, user_message, what="phone number", digits_only=True)
             changes["phone"] = normalised
+            scrubs.append((phone_pattern(normalised), "[phone saved]"))
         if email is not None:
             if not _EMAIL.fullmatch(email.strip()):
                 raise ValueError(f"not an email address: {email!r}")
             _require_said(email, user_message, what="email")
             changes["email"] = email.strip().lower()
+            scrubs.append((phrase_pattern(email.strip()), "[email saved]"))
         if changes:
             now = utc_text(self._clock.now())
             with atomic(self._conn):
@@ -172,6 +179,7 @@ class ProfileStore:
                         f"UPDATE user_profile SET {field} = ?, updated_at = ? WHERE user_id = ?",
                         (value, now, user_id),
                     )
+                scrub_history(self._conn, user_id, scrubs)
                 self._trace(run, sorted(changes))
         return self.get(user_id)
 
@@ -216,6 +224,8 @@ class ProfileStore:
                     now,
                 ),
             )
+            # The street line is PII; the area stays (not identifying, needed for search).
+            scrub_history(self._conn, user_id, [(phrase_pattern(line), "[address saved]")])
             self._trace(run, ["address"])
         return next(a for a in self.get(user_id).addresses if a.address_id == address_id)
 

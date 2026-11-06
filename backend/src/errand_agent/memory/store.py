@@ -24,6 +24,8 @@ How:  - Three kinds of user information live in three places: profile PII
       - One active fact per (user, key, scope): a new one supersedes the old one
         (`superseded_by` chain). Notes may coexist.
       - Forget wipes value and evidence and keeps a tombstone (key, scope, time).
+        For an explicit fact it also scrubs the quoted words from the user's stored
+        messages, so they can't return to the model through the transcript.
       - Changes emit a `memory` trace event after commit; a forget event doesn't
         repeat the forgotten value.
 """
@@ -38,6 +40,7 @@ from pydantic import BaseModel, ConfigDict, PositiveInt, TypeAdapter
 
 from errand_agent.core.clock import Clock, utc_text
 from errand_agent.core.ids import IdGen
+from errand_agent.memory.scrub import phrase_pattern, scrub_history
 from errand_agent.providers.models import Service
 from errand_agent.store.db import after_commit, atomic
 from errand_agent.tracing.recorder import RunTrace
@@ -300,6 +303,9 @@ class MemoryStore:
             raise ValueError(f"memory {memory_id} is {m.status}; nothing to forget")
         now = utc_text(self._clock.now())
         with atomic(self._conn):
+            if m.source == "explicit" and m.evidence:
+                # The user's own words would otherwise come back via the transcript.
+                scrub_history(self._conn, m.user_id, [(phrase_pattern(m.evidence), "[forgotten]")])
             self._conn.execute(
                 "UPDATE memories SET status = 'forgotten', value = NULL, evidence = NULL,"
                 " forgotten_at = ?, updated_at = ? WHERE memory_id = ?",

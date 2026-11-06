@@ -464,6 +464,19 @@ User information comes in three kinds, kept in three places:
   from the DB. `profile` trace events list changed field names, never values (the
   sanitizer can't recognise a phone number, so values never enter an event).
 
+### History scrubbing: `memory/scrub.py`
+- **What:** `scrub_history(conn, user_id, replacements)`, called by `MemoryStore.forget`
+  and by `ProfileStore` when contact details are saved.
+- **Why:** selecting memories carefully is pointless if the raw transcript repeats them.
+  A forgotten "I'm allergic to cats" or a typed phone number would otherwise return to
+  the model through the recent-conversation window.
+- **How:** forgetting an explicit memory replaces its quoted words with `[forgotten]`;
+  saving the name, phone (any spacing, dashes or +91), email or street line replaces it
+  with `[name saved]` etc. (the area stays). Matching ignores case and spacing, the rest
+  of each message is untouched, and only that user's messages change (all sessions, both
+  roles). **Precise scope:** the model sees a typed value once, in the turn that
+  extracts and saves it; from then on it is gone from the stored history.
+
 ### Conversation: `memory/conversation.py`
 - **What:** `ConversationStore.append / for_session / recent_for_user` over a `messages`
   table (user and assistant text only; tool calls live in traces and workflow tables).
