@@ -8,8 +8,9 @@ from errand_agent.core.ids import SequentialIdGen
 from errand_agent.mocks.scenario import Scenario
 from errand_agent.mocks.schedule import IST
 from errand_agent.mocks.seed import AREAS, ATTACK_CATEGORIES, SERVICES
-from errand_agent.mocks.world import MAX_SEARCH_DAYS, MockWorld, utc_text
+from errand_agent.mocks.world import MockWorld, utc_text
 from errand_agent.providers.models import (
+    MAX_DATE_RANGE_DAYS,
     DateRange,
     ProviderFailed,
     ProviderOk,
@@ -81,7 +82,7 @@ async def test_area_matching_ignores_case_and_returns_canonical_spelling(world: 
 
 async def test_date_range_over_limit_is_refused(world: MockWorld) -> None:
     too_long = DateRange(
-        start=date(2026, 11, 5), end=date(2026, 11, 5) + timedelta(days=MAX_SEARCH_DAYS)
+        start=date(2026, 11, 5), end=date(2026, 11, 5) + timedelta(days=MAX_DATE_RANGE_DAYS)
     )
 
     result = await world.search_providers("plumber", "Indiranagar", too_long)

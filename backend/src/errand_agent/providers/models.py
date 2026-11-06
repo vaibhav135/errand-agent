@@ -47,6 +47,11 @@ class _Model(BaseModel):
 # --- inputs -------------------------------------------------------------------------
 
 
+# Longest date range a search accepts (inclusive days). Part of the contract: the
+# workflow validates requests against it and providers refuse longer ranges.
+MAX_DATE_RANGE_DAYS = 14
+
+
 class DateRange(_Model):
     """Inclusive range of calendar dates."""
 

@@ -272,6 +272,26 @@ because keyword filters fail on encoded and split payloads.
 
 Labels live in the DB for evals only and are never returned through `ToolEnv`.
 
+### Requirements: `workflow/requirements.py`
+- **What:** `Requirements` (service, area, date range, time window, budget, preferred
+  provider), `RequirementsPatch`, and `missing_required` / `unasked_optional` / `merge`
+  / `date_problems`.
+- **Why:** "Collect only missing details; don't re-ask; keep unrelated context on a
+  correction." What to ask is decided by code, not by the model.
+- **How:**
+
+| Field | Kind |
+|---|---|
+| `service`, `area`, `date_range` | required to search |
+| `time_window`, `budget_max_inr` | optional, asked at most once (with any missing required field); `"any"` = no preference, which stops re-asking |
+| `preferred_provider_id` | never asked; from the user or memory |
+
+  A correction is a patch: only fields it explicitly sets change, so "make it HSR
+  Layout" keeps the budget. Changing the service clears the preferred provider. Unknown
+  fields are rejected (they come from model tool calls). Dates are checked against the
+  clock's today and the contract's `MAX_DATE_RANGE_DAYS` (14), with messages the model
+  can act on.
+
 ## Run lifecycle
 
 A **run** is one inbound event handled end to end: a user message, an approval click, or

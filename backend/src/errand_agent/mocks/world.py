@@ -13,7 +13,7 @@ How:  - Bound to one calling user (like an API token): `hold_slot`/`book` take n
         never ranked (ranking is the workflow's job). Area matching ignores case.
         Available slots = computed schedule (schedule.py), minus past slots, minus
         slots under an active hold or a confirmed booking; expired holds and
-        cancelled bookings free a slot. Ranges over MAX_SEARCH_DAYS are refused,
+        cancelled bookings free a slot. Ranges over MAX_DATE_RANGE_DAYS are refused,
         not silently trimmed.
       - get_provider: details, all served areas and reviews *verbatim*, injection
         fixtures included (data is data); attack labels never leave the mock.
@@ -66,6 +66,7 @@ from errand_agent.mocks.schedule import IST, slot_schedule, utc_text
 from errand_agent.mocks.seed import AREAS, SERVICES, seed_world
 from errand_agent.providers.errors import ProviderTimeout, ProviderUnavailable
 from errand_agent.providers.models import (
+    MAX_DATE_RANGE_DAYS,
     Attributes,
     Booked,
     BookFailed,
@@ -102,9 +103,8 @@ from errand_agent.providers.models import (
 from errand_agent.store.db import connect, transaction
 from errand_agent.store.migrate import migrate, migrations_for
 
-__all__ = ["HOLD_MINUTES", "MAX_SEARCH_DAYS", "MockWorld", "utc_text"]
+__all__ = ["HOLD_MINUTES", "MockWorld", "utc_text"]
 
-MAX_SEARCH_DAYS = 14
 HOLD_MINUTES = 10
 _GHOST_USER = "someone_else"  # owner of bookings that win a slot_taken race
 _CANCEL_RESULT: TypeAdapter[CancelResult] = TypeAdapter(CancelResult)
@@ -162,7 +162,7 @@ class MockWorld:
         canonical_area = _AREA_BY_KEY.get(area.strip().casefold())
         if canonical_area is None:
             return SearchFailed(status="unknown_area")
-        if (date_range.end - date_range.start).days + 1 > MAX_SEARCH_DAYS:
+        if (date_range.end - date_range.start).days + 1 > MAX_DATE_RANGE_DAYS:
             return SearchFailed(status="date_range_too_long")
 
         rows = self._conn.execute(

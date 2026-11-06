@@ -28,6 +28,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 
 ## Phase 3 — Workflow core
 - [x] First `agent.db` migration; create + migrate `agent.db` at app startup
+- [x] Requirements model: missing / ask-once fields, correction merge, date checks
 - [ ] State model + explicit transitions
 - [ ] Approval gate: approval bound to hash(action, provider, slot, price); invalidated on change
 - [ ] Booking executor: persisted idempotency key, timeout → `get_booking_status`, no duplicate bookings
