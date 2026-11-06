@@ -37,7 +37,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Booking executor: persisted idempotency key, timeout → `get_booking_status`, no duplicate bookings
 - [ ] Reconciler: startup pass + 30 s background loop + per-run check; resolves `unverified`;
       retries `cancel_pending` until min(15 min after approval, 1 h before the visit), then `cancel_failed`
-- [ ] Cancel / reschedule with bounded retries
+- [x] Cancel / reschedule with bounded retries
 - [ ] Hard limits: model turns, tool calls, wall-clock; every exit has a user-facing outcome
 
 ## Phase 4 — Memory & context

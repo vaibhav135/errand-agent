@@ -387,6 +387,22 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
   leaves the action `in_flight`, which the reconciler resolves through
   `get_booking_status(key)`, never by booking again.
 
+### Change flow (cancel / reschedule): `workflow/changes.py`
+- **What:** `ChangeFlow.propose_cancel / propose_reschedule` and `execute_cancel /
+  execute_reschedule`, sharing the commit point with booking
+  ([flow.py](../backend/src/errand_agent/workflow/flow.py)).
+- **Why:** cancelling and rescheduling are consequential too: exact approval enforced in
+  code, idempotent execution, honest outcomes when the provider is unreachable.
+- **How:** booking details always come from the provider's record (`list_bookings`),
+  when proposing and again before executing; if the booking changed in between, the
+  fingerprint no longer matches, the approval is invalidated and the user is asked again
+  (`booking_changed`).
+
+| | Behaviour |
+|---|---|
+| cancel | a 503 is retried 3× with the same key (backoff 1, 2, 4 s). Still failing → `cancel_pending`: the booking is **still active**; the reconciler retries until `min(approval + 15 min, visit − 1 h)`. Already past that → `cancel_failed` at once ("contact the provider"). Provider refusal → `cancel_failed`. Already cancelled counts as cancelled |
+| reschedule | same price; one call (no transient failures in the contract). `slot_conflict` → back to `collecting`; no longer reschedulable → `reschedule_failed` |
+
 ### Errand state machine: `workflow/errands.py`
 - **What:** one transition table per errand kind (`book`, `reschedule`, `cancel`),
   `next_state()`, and `ErrandStore` (errands, their requirements and an append-only
@@ -400,7 +416,7 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
 
 | Group | States | Meaning |
 |---|---|---|
-| Terminal | `booked`, `rescheduled`, `cancelled`, `cancel_failed`, `abandoned` | no exits |
+| Terminal | `booked`, `rescheduled`, `reschedule_failed`, `cancelled`, `cancel_failed`, `abandoned` | no exits |
 | In flight | `booking`, `verifying`, `rescheduling`, `cancelling` | a provider side effect is running |
 | Parked | `unverified`, `cancel_pending` | outcome pending reconciliation |
 | Abandonable | `collecting`, `comparing`, `awaiting_approval` | the only states the user can drop |
@@ -456,9 +472,11 @@ stateDiagram-v2
     awaiting_approval --> rescheduling: approved
     rescheduling --> rescheduled: rescheduled
     rescheduling --> collecting: slot_conflict
+    rescheduling --> reschedule_failed: not_reschedulable
     collecting --> abandoned: abandon
     awaiting_approval --> abandoned: abandon
     rescheduled --> [*]
+    reschedule_failed --> [*]
     abandoned --> [*]
 ```
 

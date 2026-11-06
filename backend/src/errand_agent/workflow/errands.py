@@ -49,6 +49,7 @@ State = Literal[
     "booked",
     "rescheduling",
     "rescheduled",
+    "reschedule_failed",
     "cancelling",
     "cancel_pending",
     "cancelled",
@@ -73,6 +74,7 @@ Event = Literal[
     "not_booked",
     "rescheduled",
     "slot_conflict",
+    "not_reschedulable",
     "cancelled",
     "not_cancellable",
     "retries_exhausted",
@@ -82,7 +84,7 @@ Event = Literal[
 
 INITIAL_STATE: State = "collecting"
 TERMINAL: frozenset[State] = frozenset(
-    {"booked", "rescheduled", "cancelled", "cancel_failed", "abandoned"}
+    {"booked", "rescheduled", "reschedule_failed", "cancelled", "cancel_failed", "abandoned"}
 )
 IN_FLIGHT: frozenset[State] = frozenset({"booking", "verifying", "rescheduling", "cancelling"})
 PARKED: frozenset[State] = frozenset({"unverified", "cancel_pending"})
@@ -118,6 +120,7 @@ _RESCHEDULE: Table = {
     ("awaiting_approval", "approved"): "rescheduling",
     ("rescheduling", "rescheduled"): "rescheduled",
     ("rescheduling", "slot_conflict"): "collecting",
+    ("rescheduling", "not_reschedulable"): "reschedule_failed",
 }
 
 _CANCEL: Table = {
@@ -274,6 +277,16 @@ class ErrandStore:
             (errand_id,),
         ).fetchall()
         return [tuple(r) for r in rows]  # type: ignore[misc]
+
+    def user_of(self, errand_id: str) -> str:
+        row = self._conn.execute(
+            "SELECT s.user_id FROM errands e JOIN sessions s USING (session_id)"
+            " WHERE e.errand_id = ?",
+            (errand_id,),
+        ).fetchone()
+        if row is None:
+            raise KeyError(f"no errand {errand_id!r}")
+        return row["user_id"]
 
     def set_booking(self, errand_id: str, booking_id: str) -> Errand:
         with atomic(self._conn):

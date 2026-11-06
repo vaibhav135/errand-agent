@@ -17,6 +17,7 @@ from errand_agent.tracing.recorder import RunTrace, TraceEvent, Tracer
 from errand_agent.workflow.actions import ProviderActionStore
 from errand_agent.workflow.approvals import ApprovalStore
 from errand_agent.workflow.booking import BookingFlow
+from errand_agent.workflow.changes import ChangeFlow
 from errand_agent.workflow.errands import ErrandStore
 from errand_agent.workflow.guarded_env import BudgetMeter
 from errand_agent.workflow.ranking import Option, rank_options
@@ -63,6 +64,22 @@ class World:
             run=self.run,
             meter=meter,
         )
+
+    def change_flow(self, env: Any = None, meter: BudgetMeter | None = None) -> ChangeFlow:
+        return ChangeFlow(
+            conn=self.conn,
+            env=env or self.mock,
+            errands=self.errands,
+            approvals=self.approvals,
+            actions=self.actions,
+            clock=self.clock,
+            ids=self.ids,
+            run=self.run,
+            meter=meter,
+        )
+
+    def mock_exec(self, sql: str, *params: object) -> None:
+        connect(self.mock_path).execute(sql, params)
 
     def mock_count(self, sql: str) -> int:
         return connect(self.mock_path).execute(sql).fetchone()[0]
