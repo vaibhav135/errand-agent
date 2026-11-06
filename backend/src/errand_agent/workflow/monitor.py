@@ -22,8 +22,8 @@ How:  - Users = everyone with a session. A pass that finds nothing new leaves no
           slot already past                                  -> "past": recorded, nobody told
           another confirmed booking, same service, within a day -> "notify_only"
           otherwise                                          -> "replace"
-      - Where: the session the booking was made in (its errand), else the user's most
-        recent session (e.g. a seeded booking the agent didn't make).
+      - Where: the user's most recent session, even if the booking was made in an older
+        one, since that's the chat the user is in (BUG-13).
       - `on_notice` runs after the commit for "replace" and "notify_only". If it fails,
         that is logged: the user has already been told, and the claim stands.
 """
@@ -136,7 +136,7 @@ class ProviderMonitor:
         self, user_id: str, booking: Booking, bookings: list[Booking]
     ) -> ProviderNotice | None:
         decision, reason, other = self._decide(booking, bookings)
-        session_id = self._session_for(user_id, booking)
+        session_id = self._session_for(user_id)
         message = _message(booking, decision, other)
         with self._tracer.start_run(session_id=session_id, trigger="provider_cancelled") as run:
             run.emit(
@@ -224,17 +224,15 @@ class ProviderMonitor:
         ).fetchone()
         return row is not None
 
-    def _session_for(self, user_id: str, booking: Booking) -> str:
+    def _session_for(self, user_id: str) -> str:
+        # The user's newest chat, wherever the booking was made: that's the one they're
+        # in, and the web UI only listens to the open chat (BUG-13). The replacement run
+        # loses nothing: its prompt carries the booking, and preferences come from memory.
         row = self._conn.execute(
-            "SELECT session_id FROM errands WHERE booking_id = ? ORDER BY updated_at DESC LIMIT 1",
-            (booking.booking_id,),
+            "SELECT session_id FROM sessions WHERE user_id = ?"
+            " ORDER BY created_at DESC, rowid DESC LIMIT 1",
+            (user_id,),
         ).fetchone()
-        if row is None:  # not made by the agent (e.g. seeded): the latest conversation
-            row = self._conn.execute(
-                "SELECT session_id FROM sessions WHERE user_id = ?"
-                " ORDER BY created_at DESC, rowid DESC LIMIT 1",
-                (user_id,),
-            ).fetchone()
         return row["session_id"]
 
 

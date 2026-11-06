@@ -351,8 +351,8 @@ primary key refuses the second) and never claimed without its notice.
 | the user's own cancellation (`cancelled`) | not a provider event: ignored |
 | otherwise | `replace`: told, and a replacement is looked for |
 
-How: always saved in the conversation (the session the booking was made in, else the
-latest), and pushed live to an open chat (`message` on `/api/events`, with a toast).
+How: always saved in the conversation (the user's latest session, wherever the booking
+was made: BUG-13), and pushed live to an open chat (`message` on `/api/events`, with a toast).
 **Rejected:** letting the model decide whether to notify: these rules are the
 testable part, and a wrong guess here either spams or stays silent.
 

@@ -144,7 +144,6 @@ async def test_another_booking_for_that_service_means_a_notice_but_no_search(
     assert setup.told == [notice]  # told, so the chat can show it; no replacement run
 
 
-@pytest.mark.xfail(strict=True, reason="BUG-13: the notice goes to the booking's old session")
 async def test_the_users_newest_session_is_told_even_if_booked_in_an_older_one(
     world: World, setup: Setup
 ) -> None:
