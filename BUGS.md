@@ -16,7 +16,7 @@ listed at the end.
 | 7 | The token estimate undercounts real tokens by ~45% | high | fixed |
 | 8 | The model doesn't know what code showed the user | medium | fixed |
 | 9 | The test suite runs out of file descriptors on a default Mac | medium | fixed |
-| 10 | The web chat shows nothing while the agent works on a reply | medium | open |
+| 10 | The web chat shows nothing while the agent works on a reply | medium | fixed |
 
 ## 1. Rollback masked the real database error
 - **What broke:** When a write failed in a way that makes SQLite end the transaction
@@ -209,7 +209,7 @@ listed at the end.
 - **Commits:** repro `dda6be5` · fix `7a57433`
 
 ## 10. The web chat shows nothing while the agent works on a reply
-- **Status:** open
+- **Status:** fixed
 - **What broke:** after sending "hello", the chat showed only the user's message for
   3.5–8.6 s, then the whole reply appeared at once. Nothing said the agent was working,
   and it looked as if replies weren't streamed.
@@ -222,9 +222,16 @@ listed at the end.
   the table below); the web UI didn't carry it over.
 - **How found:** the user, in the browser; the run's trace showed one model call of
   8.6 s with 52 output tokens, and DevTools showed the chunks arriving as SSE events.
-- **Fix:**
-- **Regression test:**
-- **Commits:**
+- **Fix:** each reply carries a `streaming` flag. Until its first word, the chat shows
+  typing dots (a tool's progress line replaces them); then the text with a blinking
+  caret until the final reply arrives. `useSmoothText` reveals the streamed text at a
+  steady pace, closing any gap within ~0.5 s, so a burst reads as typing. The wait
+  itself is the latency follow-up below (D5).
+- **Regression test:** `frontend/src/components/chat/Chat.test.tsx` ("shows that the
+  agent is working before the first word (BUG-10)", "swaps the typing dots for a
+  tool's progress line", "marks the reply as streaming until the final arrives,
+  revealing text steadily")
+- **Commits:** repro `57c7d25` · fix `60fcc60`
 
 ## Not bugs: follow-ups found alongside
 
