@@ -990,6 +990,14 @@ user message
     `state_transition` from → to), limits and errors flagged; click for the JSON.
     Events come from the past runs, the `/api/events` push and the chat's own turn
     stream; `mergeEvent` keeps each (run_id, seq) once and in order.
+  - Memory (`src/components/panels/MemoryTab.tsx`): suggestions (Confirm / Reject),
+    booking preferences and personal notes, each labelled "you told me" / "inferred,
+    you confirmed"; Edit corrects in place, pre-filled, budgets sent as numbers, the
+    server's reason shown if a value doesn't fit; provider preferences hold an id, so
+    they can be forgotten but not edited as text; Forget takes a second click ("Forget?
+    Yes") because it also scrubs the conversation. Bookings
+    (`src/components/panels/BookingsTab.tsx`): upcoming, then past, from the provider's
+    records. Both reload when the chat reports a change (`version`).
   - `Workspace` holds one session's chat and side panel and is keyed by session id, so
     a new session starts with a clean chat and trace.
   - Tests: Vitest + Testing Library on jsdom (`vitest.config.ts` reuses the Vite config,

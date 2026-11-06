@@ -119,7 +119,7 @@ export function rejectSuggestion(memoryId: string): Promise<Memory> {
   return json(`/api/memories/${memoryId}/reject`, { method: 'POST' })
 }
 
-export function correctMemory(memoryId: string, value: string): Promise<Memory> {
+export function correctMemory(memoryId: string, value: string | number): Promise<Memory> {
   return json(`/api/memories/${memoryId}`, { method: 'PATCH', body: JSON.stringify({ value }) })
 }
 

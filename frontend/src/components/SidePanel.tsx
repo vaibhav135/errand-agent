@@ -3,11 +3,15 @@
 import { useEffect, useState } from 'react'
 
 import { getDemo } from '@/api/client'
+import { BookingsTab } from '@/components/panels/BookingsTab'
+import { MemoryTab } from '@/components/panels/MemoryTab'
 import type { Runs } from '@/components/trace/model'
 import { TracePane } from '@/components/trace/TracePane'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
-export function SidePanel({ runs }: { runs: Runs }) {
+/** `version` changes when something changed elsewhere (a booking or memory, from the
+ * chat), so the Memory and Bookings tabs reload. */
+export function SidePanel({ runs, version }: { runs: Runs; version: number }) {
   const [demo, setDemo] = useState(false)
 
   useEffect(() => {
@@ -27,8 +31,12 @@ export function SidePanel({ runs }: { runs: Runs }) {
       <TabsContent value="trace" className="min-h-0 flex-1 overflow-auto p-3 text-xs">
         <TracePane runs={runs} />
       </TabsContent>
-      <TabsContent value="memory" className="min-h-0 flex-1 overflow-auto p-3 text-sm" />
-      <TabsContent value="bookings" className="min-h-0 flex-1 overflow-auto p-3 text-sm" />
+      <TabsContent value="memory" className="min-h-0 flex-1 overflow-auto p-3 text-sm">
+        <MemoryTab version={version} />
+      </TabsContent>
+      <TabsContent value="bookings" className="min-h-0 flex-1 overflow-auto p-3 text-sm">
+        <BookingsTab version={version} />
+      </TabsContent>
       {demo && <TabsContent value="demo" className="min-h-0 flex-1 overflow-auto p-3 text-sm" />}
     </Tabs>
   )
