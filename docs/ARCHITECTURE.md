@@ -171,6 +171,21 @@ every environment, not only on a default Mac.
   fingerprint of the card it displayed, so a card whose details changed since is not
   approved: the reply says so and carries the current card.
 
+### Memory and bookings API: `api/memory_routes.py`
+- **What:** `GET /api/memories` (saved facts and suggestions, apart), `POST
+  /api/memories/{id}/confirm` · `/reject`, `PATCH /api/memories/{id}` `{value}`
+  (correct), `DELETE /api/memories/{id}` (forget), `GET /api/bookings`.
+- **Why:** inspect, correct and forget, explicit vs inferred kept apart (assignment);
+  suggestions decided by the user in code, never through the model (D2). The web UI's
+  memory panel, as `/memories`, `/confirm` and `/reject` are the chat's.
+- **How:** all code, no model. Saved facts carry their source, suggestions their
+  reason. A correction goes through the store's provenance rule: the value typed in the
+  form is the user's own words, so it is both quote and message. Forget also scrubs the
+  fact's words from the stored conversation. Errors: unknown id 404, wrong state (e.g.
+  confirming a fact that isn't a suggestion) 409, a value the key can't hold 422 (caught
+  before ValueError, since pydantic's ValidationError is one). Bookings come from the
+  provider's records.
+
 ### Chat CLI: `api/chat.py` (`make chat`)
 - **What:** a read-reply loop for the demo user over the same handler, databases and
   traces as the web API; `render_card()` draws an approval card.

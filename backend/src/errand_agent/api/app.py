@@ -41,6 +41,7 @@ from errand_agent.agent import models as agent_models
 from errand_agent.agent.handler import MessageHandler
 from errand_agent.api.chat_routes import router as chat_router
 from errand_agent.api.events import EventHub
+from errand_agent.api.memory_routes import router as memory_router
 from errand_agent.core.clock import Clock, SystemClock
 from errand_agent.core.config import Settings, load_settings
 from errand_agent.core.ids import IdGen, RandomIdGen
@@ -194,5 +195,6 @@ def create_app(
         return {"status": "ok"}
 
     api.include_router(chat_router)
+    api.include_router(memory_router)
     app.include_router(api)
     return app
