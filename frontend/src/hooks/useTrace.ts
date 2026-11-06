@@ -23,7 +23,7 @@ export function useTrace(sessionId: string | null) {
         setRuns((r) => past.flatMap((run) => run.events).reduce(mergeEvent, r))
       })
       .catch(() => undefined) // no past runs to show: the live ones still arrive
-    const close = subscribeEvents(sessionId, add) // runs nobody typed, e.g. reconcile
+    const close = subscribeEvents(sessionId, { onTrace: add }) // runs nobody typed
     return () => {
       cancelled = true
       close()

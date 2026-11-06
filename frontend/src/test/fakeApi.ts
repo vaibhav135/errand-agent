@@ -17,13 +17,22 @@ export function fakeApi(routes: Record<string, Handler | unknown>) {
     return value instanceof Response ? value : Response.json(value)
   })
   vi.stubGlobal('fetch', fetchMock)
-  // jsdom has no EventSource: a silent stand-in for the live trace stream.
+  // jsdom has no EventSource: a stand-in for /api/events that a test can push through.
+  const listeners: Array<{ name: string; listener: (e: MessageEvent) => void }> = []
   vi.stubGlobal(
     'EventSource',
     class {
-      addEventListener() {}
+      addEventListener(name: string, listener: (e: MessageEvent) => void) {
+        listeners.push({ name, listener })
+      }
       close() {}
     },
   )
-  return { calls }
+  /** Send an SSE event (e.g. "message") to every open stream listening for it. */
+  const push = (name: string, data: unknown) => {
+    for (const l of listeners.filter((l) => l.name === name)) {
+      l.listener(new MessageEvent(name, { data: JSON.stringify(data) }))
+    }
+  }
+  return { calls, push }
 }

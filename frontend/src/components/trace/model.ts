@@ -6,6 +6,7 @@
 // docs/ARCHITECTURE.md, "Run lifecycle").
 
 import type { TraceEvent } from '@/api/types'
+import { formatSlot } from '@/components/chat/format'
 
 export interface RunView {
   run_id: string
@@ -71,6 +72,10 @@ export function summarize(e: TraceEvent): string {
       return `${f.event ?? f.action ?? ''} ${f.key ?? ''}`.trim()
     case 'error':
       return String(f.message ?? f.error ?? 'error')
+    case 'provider_cancellation': // the monitor saw it, unasked (D6)
+      return `${f.provider_name} cancelled · ${String(f.service).replaceAll('_', ' ')} · ${formatSlot(String(f.slot))}`
+    case 'notice_decision':
+      return `${f.decision} · ${f.reason}`
     default:
       return ''
   }

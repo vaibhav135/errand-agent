@@ -1059,6 +1059,13 @@ user message
     arrives. `useSmoothText` reveals streamed text at a steady pace, because a short
     reply's chunks land in one burst: each frame shows at least 2 more characters and
     about 1/12 of what's still hidden, so it never lags the stream by more than ~0.5 s.
+    Messages the agent sends unasked (D6) arrive as `message` events on `/api/events`
+    (the chat and the trace each subscribe): they are appended with any card, a notice
+    without a card also shows as a toast, and the other tabs refresh. One already in the
+    history (saved just as it loaded) isn't added twice (matched by run id and text).
+    The history loads with `GET /pending`, and a card still waiting is drawn under the
+    latest reply, so a replacement proposed while the user was away is there to approve.
+    The Trace tab summarises `provider_cancellation` and `notice_decision` events.
   - Trace (`src/components/trace/`, `src/hooks/useTrace.ts`): runs newest first, each
     collapsible under a header (trigger, outcome, calls, tokens, cost, duration;
     "running…" until it finishes); one line per event with its key fact
