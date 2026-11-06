@@ -1,9 +1,8 @@
 import { useEffect, useState } from 'react'
 
 import { fetchHealth, type HealthStatus } from '@/api/health'
-import { Chat } from '@/components/chat/Chat'
-import { SidePanel } from '@/components/SidePanel'
 import { Button } from '@/components/ui/button'
+import { Workspace } from '@/components/Workspace'
 import { useSession } from '@/hooks/useSession'
 import { cn } from '@/lib/utils'
 
@@ -43,18 +42,7 @@ function App() {
         </div>
       </header>
 
-      <main className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-2">
-        <section
-          aria-label="Chat"
-          className="flex min-h-0 flex-col border-b md:border-r md:border-b-0"
-        >
-          <Chat key={sessionId ?? 'none'} sessionId={sessionId} />
-        </section>
-
-        <section aria-label="Side panel" className="flex min-h-0 flex-col">
-          <SidePanel sessionId={sessionId} />
-        </section>
-      </main>
+      <Workspace key={sessionId ?? 'none'} sessionId={sessionId} />
     </div>
   )
 }

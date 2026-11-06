@@ -982,8 +982,16 @@ user message
     Confirm / Reject). Replies render as Markdown (react-markdown, which doesn't render
     raw HTML, so model text can't inject markup). Stop aborts the display only (the
     reader is cancelled at once): the turn still finishes on the server and its reply is
-    in the history after a reload. Enter sends, Shift+Enter is a new line. A new
-    session mounts a fresh chat (keyed by session id).
+    in the history after a reload. Enter sends, Shift+Enter is a new line.
+  - Trace (`src/components/trace/`, `src/hooks/useTrace.ts`): runs newest first, each
+    collapsible under a header (trigger, outcome, calls, tokens, cost, duration;
+    "running…" until it finishes); one line per event with its key fact
+    (`summarize`: e.g. `model_call` est / real tokens, `agent_tool` tool and latency,
+    `state_transition` from → to), limits and errors flagged; click for the JSON.
+    Events come from the past runs, the `/api/events` push and the chat's own turn
+    stream; `mergeEvent` keeps each (run_id, seq) once and in order.
+  - `Workspace` holds one session's chat and side panel and is keyed by session id, so
+    a new session starts with a clean chat and trace.
   - Tests: Vitest + Testing Library on jsdom (`vitest.config.ts` reuses the Vite config,
     so `@/` resolves the same); `src/test/fakeApi.ts` routes `fetch` by method and path.
     `make test` runs backend and frontend.

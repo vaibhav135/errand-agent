@@ -76,7 +76,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Frontend: Vitest, API client, layout shell (chat + tabbed side panel)
 - [x] Chat: streamed replies, progress lines, Stop; ApprovalCard / SuggestionsCard /
       BookingCard
-- [ ] TracePane (runs, one-line events, expand to JSON)
+- [x] TracePane (runs, one-line events, expand to JSON)
 - [ ] Memory and Bookings tabs
 - [ ] Demo tab; end-to-end run with `make dev`
 
