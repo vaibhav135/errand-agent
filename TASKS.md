@@ -96,10 +96,10 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
       requirement needs it; the hand-written 30-provider world covers every eval and the demo.
 
 ## Phase 9 — Deliverables
-- [ ] README (setup, run, test, eval)
-- [ ] Design note (≤1 page) + annotated timeout-after-success trace excerpt
-- [ ] BUGS.md finalised (3 real bugs)
-- [ ] Raw end-to-end trace in `docs/traces/`
+- [x] README (setup, run, test, eval)
+- [x] Design note (≤1 page) + annotated timeout-after-success trace excerpt (`docs/DESIGN.md`)
+- [x] BUGS.md finalised (the top 3 in full, the rest as honourable mentions)
+- [x] Raw end-to-end trace in `docs/trace/` (`make trace`: real model, a timeout after success)
 - [ ] Demo recording (3–5 min, chat + trace side by side)
 - [ ] AI coding transcripts: `scripts/export_transcript.py` turns the raw session JSONL(s)
       (kept outside git) into `docs/transcript.md`: full user/assistant turns, one line per
