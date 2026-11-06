@@ -60,7 +60,9 @@ def pytest_sessionfinish(session: pytest.Session) -> None:
     path = session.config.getoption("--eval-table")
     rows = session.config.stash[RESULTS_KEY]
     if path and rows:
-        Path(path).write_text(_table(rows))
+        out = Path(path)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(_table(rows))
 
 
 def _table(rows: list[EvalRow]) -> str:

@@ -67,6 +67,24 @@ async def test_a_forgotten_memory_in_context_is_caught(tmp_path: Path) -> None:
     assert any("after it was forgotten" in v for v in sim.violations())
 
 
+async def test_a_forget_later_in_the_same_turn_is_not_flagged(tmp_path: Path) -> None:
+    # Within one turn the context is built first; a forget may follow at the same instant.
+    sim = Sim(tmp_path)
+    memories = sim.handler._memories  # pyright: ignore[reportPrivateUsage]
+    m = memories.remember(
+        USER, "earliest_start", "10:00", quote="10 am", user_message="after 10 am"
+    )
+    sim.world.clock.advance(60)
+    with sim.tracer.start_run(session_id=SESSION, trigger="test_context") as run:
+        run.emit(
+            "context_sent",
+            {"tokens": {"total": 10}, "budget": {"total": 7500}, "memory_ids": [m.memory_id]},
+        )
+        memories.forget(m.memory_id)  # same FakeClock instant as the context
+
+    assert not any("forgotten" in v for v in sim.violations())
+
+
 async def test_a_run_past_its_limits_is_caught(tmp_path: Path) -> None:
     sim = Sim(tmp_path, budget=RunBudget(max_model_turns=1))
     run = sim.tracer.start_run(session_id=SESSION, trigger="test_limits")

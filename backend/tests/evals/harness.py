@@ -35,6 +35,7 @@ from pydantic_ai.models.function import FunctionModel
 
 from errand_agent.agent.handler import MessageHandler, Reply
 from errand_agent.memory.conversation import ConversationStore
+from errand_agent.memory.seed import seed_demo_user
 from errand_agent.mocks.control import MockControl
 from errand_agent.mocks.scenario import Scenario
 from errand_agent.store.db import connect
@@ -98,8 +99,26 @@ class Sim:
 
     # --- what the simulated user does ------------------------------------------------------
 
-    async def say(self, text: str) -> Reply:
-        return await self.handler.handle(session_id=SESSION, user_id=USER, text=text)
+    def _user_pause(self) -> None:
+        """A user takes a moment between actions. Without it every event would share one
+        FakeClock instant, and "was this memory forgotten before that context was sent?"
+        couldn't be told apart from "in the same turn, after it"."""
+        self.world.clock.advance(30)
+
+    async def say(self, text: str, *, session: str = SESSION) -> Reply:
+        self._user_pause()
+        return await self.handler.handle(session_id=session, user_id=USER, text=text)
+
+    def new_session(self, session_id: str) -> str:
+        """Another conversation for the same user (a later visit)."""
+        self.world.clock.advance(60)
+        self.world.errands.create_session(session_id, user_id=USER)
+        return session_id
+
+    def seed_demo_user(self) -> None:
+        """The generated demo profile: 55 memories (one suggestion awaiting review) and
+        200 messages in 10 earlier sessions. Its user is the World's user_1."""
+        assert seed_demo_user(self.world.conn, self.world.clock)
 
     async def approve(self, *, fingerprint: str | None = None) -> Reply:
         return await self._click(True, fingerprint)
@@ -108,6 +127,7 @@ class Sim:
         return await self._click(False, None)
 
     async def _click(self, approve: bool, fingerprint: str | None) -> Reply:
+        self._user_pause()
         card = self.waiting_card()
         return await self.handler.decide(
             session_id=SESSION,
@@ -117,17 +137,21 @@ class Sim:
         )
 
     async def pick(self, provider_id: str, slot: datetime) -> Reply:
+        self._user_pause()
         return await self.handler.pick(session_id=SESSION, provider_id=provider_id, slot=slot)
 
     async def provider_cancels(self, booking_id: str) -> list[ProviderNotice]:
         """The provider cancels; the app's monitor notices on its next pass, and a
         "replace" notice runs the replacement turn, as the app wires it."""
         MockControl(self.world.mock).cancel_by_provider(booking_id, "technician unavailable")
-        replies: list[Reply] = []
+        return await self.monitor_pass()
+
+    async def monitor_pass(self) -> list[ProviderNotice]:
+        """One pass of the app's provider monitor (it runs every 10 s in the app)."""
 
         async def on_notice(notice: ProviderNotice) -> None:
             if notice.decision == "replace":
-                replies.append(await self.handler.handle_provider_cancellation(notice))
+                self.replacements.append(await self.handler.handle_provider_cancellation(notice))
 
         monitor = ProviderMonitor(
             conn=self.world.conn,
@@ -137,9 +161,7 @@ class Sim:
             tracer=self.tracer,
             on_notice=on_notice,
         )
-        notices = await monitor.check_once()
-        self.replacements = replies
-        return notices
+        return await monitor.check_once()
 
     def use_env(self, env: Env) -> None:
         """Talk to the provider through `env` from now on (e.g. a ScriptedEnv that
@@ -250,8 +272,8 @@ class Sim:
         out = []
         started = {e["run_id"]: e["trigger"] for e in self.events("run_started")}
         finished = {e["run_id"]: e["outcome"] for e in self.events("run_finished")}
-        saved = self.conversation.for_session(SESSION)
-        replied = {m.run_id for m in saved if m.role == "assistant"}
+        rows = self.world.conn.execute("SELECT run_id FROM messages WHERE role = 'assistant'")
+        replied = {r["run_id"] for r in rows}  # in any session (scenarios may open more)
         for run_id, trigger in started.items():
             if run_id in self.crashed or trigger == "test":  # "test": World's own fixture run
                 continue
@@ -332,5 +354,7 @@ def _at(text: str) -> datetime:
 
 
 def _before(text: str | None, at: datetime) -> bool:
-    """Whether the stored time `text` is at or before `at` (None: never happened)."""
-    return text is not None and _at(text) <= at
+    """Whether the stored time `text` is strictly before `at` (None: never happened).
+    Strictly: within one turn the context is built first and a forget may follow at
+    the same instant; across turns the simulated user's pause separates them."""
+    return text is not None and _at(text) < at
