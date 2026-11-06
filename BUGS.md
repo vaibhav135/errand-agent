@@ -13,7 +13,7 @@ listed at the end.
 | 4 | Slash commands leak to the model | low | fixed |
 | 5 | The agent's own tool calls aren't traced | medium | fixed |
 | 6 | An inference can contradict an explicit preference | medium | fixed |
-| 7 | The token estimate undercounts real tokens by ~45% | high | open |
+| 7 | The token estimate undercounts real tokens by ~45% | high | fixed |
 | 8 | The model doesn't know what code showed the user | medium | open |
 
 ## 1. Rollback masked the real database error
@@ -142,21 +142,27 @@ listed at the end.
 - **Commits:** repro `32174f3` · fix `e7997da`
 
 ## 7. The token estimate undercounts real tokens by ~45%
-- **Status:** open
+- **Status:** fixed
 - **What broke:** in the second live chat, every `model_call` showed our estimate well
   below the provider's real input count: 2,582 vs 3,763 (1.46×), 4,404 vs 6,264
   (1.42×), 4,843 vs **7,474** (1.54×). The estimate is meant to be *pessimistic*; it
   isn't, so the 6,000-token cap let a 7,474-token request through. BUG-3's fix holds
   in our units, not in the provider's.
-- **Why (hypotheses, to confirm in the repro):** (a) JSON tool schemas tokenize more
-  densely per character than prose (chars/3.5 assumes prose); (b) the provider adds a
-  hidden tool-use system prompt when tools are offered (Anthropic documents a few
-  hundred tokens); (c) per-message formatting overhead we don't count.
+- **Why:** measured with Anthropic's `count_tokens` on our own texts, all three
+  hypotheses held: (a) JSON *data* is dense, 2.04 chars/token; (b) a hidden tool-use
+  prompt of 321 tokens is added whenever tools are offered, which we never counted;
+  and on top of that (c) even prose and tool schemas run 2.58-3.00 chars/token on this
+  model, not 3.5 (newer Claude tokenizers produce ~30% more tokens per character).
 - **How found:** the calibration field added by BUG-3 (`estimated_input_tokens` next
   to `input_tokens`), on the user's second live chat.
-- **Fix:** -
-- **Regression test:** -
-- **Commits:** -
+- **Fix:** a calibrated estimate (text 2.4, JSON data 1.9, +350 per request with
+  tools), each ~7% below the lowest measurement. `make calibrate` records exact sample
+  texts with their real counts; the budget default becomes 7,500, derived from
+  measured needs (`docs/DECISIONS.md`, D3).
+- **Regression test:** `backend/tests/unit/test_token_calibration.py` (every recorded
+  sample is estimated at or above its real count; tool definitions include the hidden
+  tool-use prompt), offline from `backend/tests/data/token_calibration.json`.
+- **Commits:** repro `d3bd25b` · fix `9931c5b`
 
 ## 8. The model doesn't know what code showed the user
 - **Status:** open
