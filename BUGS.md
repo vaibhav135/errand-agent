@@ -8,10 +8,11 @@ listed at the end.
 | # | Bug | Severity | Status |
 |---|---|---|---|
 | 1 | Rollback masked the real database error | medium | fixed |
-| 2 | Seeded history contradicts the mock world | high | open |
+| 2 | Seeded history contradicts the mock world | high | fixed |
 | 3 | The context budget isn't a cap | high | open |
 | 4 | Slash commands leak to the model | low | open |
 | 5 | The agent's own tool calls aren't traced | medium | open |
+| 6 | An inference can contradict an explicit preference | medium | open |
 
 ## 1. Rollback masked the real database error
 - **What broke:** When a write failed in a way that makes SQLite end the transaction
@@ -27,24 +28,33 @@ listed at the end.
 - **Commits:** repro `9a809a2` · fix `0d4e6c6`
 
 ## 2. Seeded history contradicts the mock world
-- **Status:** open
+- **Status:** fixed
 - **What broke:** on a plain "hi" in the first live `make chat`, the agent apologised for
   "its own" earlier mistakes. The seeded transcript has the assistant saying "Saturday's
   cleaning is confirmed for 11:00." (3×) and "Your booking is confirmed…", but no such
   booking exists in the mock world. The agent called `find_my_bookings`, saw the
   contradiction and confessed, unprompted. Trusting the provider over the transcript was
   right; the seeded data was wrong.
-- **Why:** the generator's `FILLER` exchanges contain hand-written factual claims
-  (bookings, ratings, schedules) that are never checked against the mock world's data.
-  Suspected second cause, to confirm in the repro: facts are placed into sessions by a
-  shuffle that ignores their `days_ago`, so a superseded statement ("plumbers under
-  1200") can be said *after* the one that replaced it ("up to 1500"); the agent also
-  said "I told you up to 1200 was saved".
+- **Why:** the seed had two sources of truth built independently, the seed generator
+  (memories + conversation) and the mock world's booking history, and nothing
+  cross-checked them. Three defects followed:
+  1. the canned `FILLER` replies stated bookings that never existed;
+  2. the inferred memories cited bookings the history didn't have ("2 completed
+     bookings with AquaCare": 0 completed, 1 cancelled);
+  3. facts were shuffled into sessions regardless of their date, so the superseded
+     "plumbers under 1200" was said 40 days *after* "up to 1500" replaced it (44 of
+     48 facts were said more than 10 days from when they were learned).
 - **How found:** live chat; trace `run_9617af2d…` (all 201 messages in context, one
   `find_my_bookings` call).
-- **Fix:** -
-- **Regression test:** -
-- **Commits:** -
+- **Fix:** the mock world's history is the one source of truth for bookings (it now
+  holds the completed bookings the inferences cite); facts are said in the session
+  nearest their date, oldest first; the small talk states no booking facts.
+- **Regression test:** `backend/tests/unit/test_memory_seed.py::test_facts_are_said_when_they_were_learned`,
+  `::test_inferred_reasons_match_the_booking_history`,
+  `::test_the_seeded_assistant_makes_no_booking_claims`; and
+  `backend/tests/unit/test_memory_inference.py::test_the_seeds_usual_providers_are_what_the_rules_derive`
+  (runs the real inference rules over the history).
+- **Commits:** repro `dae1e17` · fix `c347e46`
 
 ## 3. The context budget isn't a cap
 - **Status:** open
@@ -90,6 +100,22 @@ listed at the end.
 - **Related:** `list_memories` returns pending suggestions *with their values* to the
   model. Decided to keep unconfirmed inferences out of the model's context entirely
   (`docs/DECISIONS.md`, D1); fixed together with this bug.
+- **Fix:** -
+- **Regression test:** -
+- **Commits:** -
+
+## 6. An inference can contradict an explicit preference
+- **Status:** open
+- **What broke:** run over the demo user's booking history, the inference rules suggest
+  "earliest start 09:00" (three old bookings started at 9:00), although the user
+  explicitly said "never before 10am" 40 days ago. The store would save it as a pending
+  suggestion, so the agent would ask the user to confirm the opposite of what they told
+  it. Latent today: `suggest_from_history` isn't called at runtime yet.
+- **Why:** `MemoryStore.propose_inferred` skips a suggestion only if the *same value* is
+  already active / pending / rejected, or the fact was forgotten. A *different* value
+  for a key the user stated explicitly isn't blocked, so explicit doesn't beat inferred.
+- **How found:** writing the BUG-2 consistency test, which runs the real rules over the
+  seeded history.
 - **Fix:** -
 - **Regression test:** -
 - **Commits:** -
