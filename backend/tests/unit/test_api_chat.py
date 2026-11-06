@@ -118,6 +118,24 @@ def test_the_cards_approve_button_decides_in_code(
     assert response.json()["kind"] == "cancelled"
 
 
+def test_a_pending_card_can_be_fetched_after_a_reload(
+    app_settings: Settings, app_clock: FakeClock
+) -> None:
+    # A card made while the user was away (Phase 7) must still be there when they look.
+    model = FunctionModel(
+        stream_function=Streaming(("start_cancel", {"booking_id": "bk_hist_coolbreeze"}), ["Ok?"])
+    )
+    with client_for(app_settings, app_clock, model) as client:
+        session_id = new_session(client)
+        assert client.get(f"/api/sessions/{session_id}/pending").json() == []
+        card = events(client, session_id, "cancel my AC servicing")[-1][1]["approval"]
+
+        pending = client.get(f"/api/sessions/{session_id}/pending").json()
+
+    assert [p["approval_id"] for p in pending] == [card["approval_id"]]
+    assert pending[0]["fingerprint"] == card["fingerprint"]
+
+
 def test_deciding_an_unknown_card_is_404(chat: TestClient) -> None:
     response = chat.post(
         "/api/approvals/appr_nope/decision", json={"approve": True, "fingerprint": "x"}

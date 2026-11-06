@@ -90,6 +90,10 @@ class Settings(BaseSettings):
     # Background reconciler cadence; 0 disables the loop (the startup pass still runs).
     reconcile_interval_seconds: float = Field(default=30.0, ge=0)
 
+    # How often the provider monitor checks for cancellations (Phase 7, D6); 0 disables.
+    # A local list_bookings call per user with a session: cheap, so it can be frequent.
+    monitor_interval_seconds: float = Field(default=10.0, ge=0)
+
     # validation_alias = the standard, unprefixed env var name.
     anthropic_api_key: SecretStr | None = Field(default=None, validation_alias="ANTHROPIC_API_KEY")
     openai_api_key: SecretStr | None = Field(default=None, validation_alias="OPENAI_API_KEY")

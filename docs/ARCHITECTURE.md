@@ -88,6 +88,7 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 | `ERRAND_MOCK_SEED` | `42` |
 | `ERRAND_MAX_MODEL_TURNS` / `ERRAND_MAX_TOOL_CALLS` / `ERRAND_MAX_RUN_SECONDS` | `8` / `20` / `60` (per-run hard limits) |
 | `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
+| `ERRAND_MONITOR_INTERVAL_SECONDS` | `10` (provider monitor: checks `list_bookings` for cancellations, D6; `0` disables the loop) |
 | `ERRAND_CONTEXT_TOKEN_BUDGET` / `ERRAND_MEMORY_TOKEN_BUDGET` | `7500` / `600` (estimated tokens per model request, calibrated never to undercount; 7,500 derived in DECISIONS D3) |
 | `ERRAND_SEED_DEMO_USER` | `true` (load the generated demo user into an empty DB) |
 | `ERRAND_DEMO_MODE` | `false` (expose `/api/demo/*` and the UI's Demo tab: trigger failures live) |
@@ -146,6 +147,21 @@ every environment, not only on a default Mac.
   system clock and random ids. `build_handler(services)` makes the `MessageHandler`
   (models and budgets from Settings) for both the chat CLI and the API, so they can't
   drift; it is separate from `build_services` so the app starts without a model key.
+  Background loops: the reconciler (`ERRAND_RECONCILE_INTERVAL_SECONDS`) and the
+  provider monitor (`ERRAND_MONITOR_INTERVAL_SECONDS`, D6); `0` turns either off.
+
+### Proactive follow-up: `api/proactive.py`
+- **What:** `handle_notice(services, notice)`, the provider monitor's `on_notice` in
+  the app (Phase 7, D6).
+- **Why:** the monitor decides and records; the app decides who hears it and runs the
+  replacement turn.
+- **How:** the notice (already saved by the monitor) is pushed at once as a `message`
+  event, even mid-turn, so the user hears the news first. For `replace`, the replacement
+  run (`handle_provider_cancellation`) takes the session's lock, so it waits for a turn
+  in progress and never interleaves with one; its reply, with any approval card, is
+  pushed the same way. With no model configured, a code-written fallback is saved and
+  pushed instead, so the user is never left with only "I'm looking…". A closed browser
+  finds both in the history, and the card via `GET /api/sessions/{id}/pending`.
 
 ### Chat API: `api/chat_routes.py`, `api/events.py`
 - **What:** `POST /api/sessions`; `GET /api/sessions/{id}/messages` (history);
@@ -173,6 +189,11 @@ every environment, not only on a default Mac.
   with plain JSON (decided in code, no model, nothing to stream). The UI sends back the
   fingerprint of the card it displayed, so a card whose details changed since is not
   approved: the reply says so and carries the current card.
+  **Pending cards:** `GET /api/sessions/{id}/pending` lists the session's approval cards
+  still waiting, so a card made while the user was away (D6) is drawn when they look.
+  The hub's listeners get `(name, data)`: `trace` events, and `message` events
+  (`publish_message`: something the agent says unasked); a turn's stream forwards only
+  its trace.
 
 ### Trace API: `api/trace_routes.py`
 - **What:** `GET /api/events?session_id=` (SSE push) and `GET /api/sessions/{id}/runs`.
@@ -180,7 +201,8 @@ every environment, not only on a default Mac.
   provider cancelled"), so the trace pane also listens to a push stream; past runs
   make it whole again after a reload.
 - **How:** the push stream subscribes to the EventHub for one session: ": connected",
-  then a `trace` frame per event, and ": keep-alive" after `HEARTBEAT_SECONDS` (15) of
+  then a `trace` frame per event and a `message` frame per message sent unasked
+  (`{role, content, run_id, reply}`, D6), and ": keep-alive" after `HEARTBEAT_SECONDS` (15) of
   quiet, which also notices a client that left (then it unsubscribes and ends). Past
   runs are read from the JSONL trace files (newest 50), in a worker thread so a long
   history can't stall the loop; the reader touches files only, never SQLite.

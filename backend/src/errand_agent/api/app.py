@@ -14,7 +14,9 @@ How:  - Startup opens and migrates agent.db, and opens the mock world (migrates 
       - With `seed_demo_user` on, an empty agent.db gets the generated demo user.
       - Startup then runs one reconcile pass (restart recovery: settle side effects
         the previous process left unknown) and starts the background reconciler
-        loop unless `reconcile_interval_seconds` is 0; shutdown cancels it.
+        loop unless `reconcile_interval_seconds` is 0, and the provider monitor's loop
+        (cancellations, D6) unless `monitor_interval_seconds` is 0; shutdown cancels
+        both. The monitor's notices go to api/proactive.py.
       - Defaults (Settings from env/.env, SystemClock, RandomIdGen) are used by the
         dev server (`uvicorn --factory`); tests pass their own.
       - All HTTP routes live under /api, so the built frontend can be served at /.
@@ -43,10 +45,12 @@ from errand_agent.api.chat_routes import router as chat_router
 from errand_agent.api.demo_routes import router as demo_router
 from errand_agent.api.events import EventHub
 from errand_agent.api.memory_routes import router as memory_router
+from errand_agent.api.proactive import handle_notice
 from errand_agent.api.trace_routes import router as trace_router
 from errand_agent.core.clock import Clock, SystemClock
 from errand_agent.core.config import Settings, load_settings
 from errand_agent.core.ids import IdGen, RandomIdGen
+from errand_agent.memory.conversation import ConversationStore
 from errand_agent.memory.seed import seed_demo_user
 from errand_agent.mocks.control import MockControl
 from errand_agent.mocks.scenario import Scenario
@@ -59,6 +63,7 @@ from errand_agent.workflow.approvals import ApprovalStore
 from errand_agent.workflow.context import ContextBudget
 from errand_agent.workflow.errands import ErrandStore
 from errand_agent.workflow.guarded_env import RunBudget
+from errand_agent.workflow.monitor import ProviderMonitor, ProviderNotice
 from errand_agent.workflow.reconciler import Reconciler
 
 
@@ -76,6 +81,8 @@ class Services:
     reconciler: Reconciler
     hub: EventHub
     control: MockControl  # the mock's control plane: demo routes only, never the agent
+    # Set by build_services right after construction: its on_notice needs these services.
+    monitor: ProviderMonitor = field(init=False)
     model: Model | None = None  # a test's scripted model; None = from Settings
     _handler: MessageHandler | None = None
     _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
@@ -120,7 +127,7 @@ def build_services(settings: Settings, clock: Clock, ids: IdGen) -> Services:
         clock=clock,
         tracer=tracer,
     )
-    return Services(
+    services = Services(
         settings=settings,
         clock=clock,
         ids=ids,
@@ -134,6 +141,19 @@ def build_services(settings: Settings, clock: Clock, ids: IdGen) -> Services:
         hub=hub,
         control=MockControl(world),
     )
+
+    async def on_notice(notice: ProviderNotice) -> None:
+        await handle_notice(services, notice)
+
+    services.monitor = ProviderMonitor(
+        conn=agent_db,
+        env=world,  # the contract only, never the mock's control plane
+        conversations=ConversationStore(agent_db, clock=clock, ids=ids),
+        clock=clock,
+        tracer=tracer,
+        on_notice=on_notice,
+    )
+    return services
 
 
 def build_handler(
@@ -175,18 +195,28 @@ def create_app(
         app.state.services = services
         # Restart recovery: settle anything left unknown by the previous process.
         await services.reconciler.reconcile_once()
-        loop_task: asyncio.Task[None] | None = None
+        loops: list[asyncio.Task[None]] = []
         if resolved_settings.reconcile_interval_seconds > 0:
-            loop_task = asyncio.create_task(
-                services.reconciler.run_periodically(resolved_settings.reconcile_interval_seconds)
+            loops.append(
+                asyncio.create_task(
+                    services.reconciler.run_periodically(
+                        resolved_settings.reconcile_interval_seconds
+                    )
+                )
+            )
+        if resolved_settings.monitor_interval_seconds > 0:  # provider cancellations (D6)
+            loops.append(
+                asyncio.create_task(
+                    services.monitor.run_periodically(resolved_settings.monitor_interval_seconds)
+                )
             )
         try:
             yield
         finally:
-            if loop_task is not None:
-                loop_task.cancel()
+            for task in loops:
+                task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
-                    await loop_task
+                    await task
             services.close()
 
     app = FastAPI(title="Errand Agent", lifespan=lifespan)
