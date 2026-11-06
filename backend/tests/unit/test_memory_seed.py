@@ -1,0 +1,162 @@
+import json
+import re
+import sqlite3
+from datetime import UTC, datetime
+from pathlib import Path
+
+import pytest
+
+from errand_agent.core.clock import FakeClock
+from errand_agent.core.ids import SequentialIdGen
+from errand_agent.memory.conversation import ConversationStore
+from errand_agent.memory.profile import ProfileStore
+from errand_agent.memory.seed import seed_demo_user
+from errand_agent.memory.seedgen import OUTPUT, build_seed
+from errand_agent.memory.store import MemoryStore
+from errand_agent.store.db import connect
+from errand_agent.store.migrate import migrate, migrations_for
+from errand_agent.workflow.approvals import ApprovalStore
+from errand_agent.workflow.context import ContextBudget, ContextBuilder
+from errand_agent.workflow.errands import ErrandStore
+from errand_agent.workflow.requirements import Requirements
+
+NOW = datetime(2026, 11, 5, 3, 30, tzinfo=UTC)
+U = "user_1"
+
+
+@pytest.fixture
+def clock() -> FakeClock:
+    return FakeClock(NOW)
+
+
+@pytest.fixture
+def conn(tmp_path: Path, clock: FakeClock) -> sqlite3.Connection:
+    c = connect(tmp_path / "agent.db")
+    migrate(c, migrations_for("agent"), clock)
+    return c
+
+
+@pytest.fixture
+def seeded(conn: sqlite3.Connection, clock: FakeClock) -> sqlite3.Connection:
+    assert seed_demo_user(conn, clock) is True
+    return conn
+
+
+def norm(text: str) -> str:
+    return re.sub(r"\s+", " ", text.casefold())
+
+
+# --- the generator --------------------------------------------------------------------
+
+
+def test_committed_seed_matches_its_generator() -> None:
+    assert json.loads(OUTPUT.read_text()) == build_seed(), (
+        "demo_user.json is stale: run `make seed-data`"
+    )
+
+
+def test_seed_meets_the_assignment_minimums() -> None:
+    seed = build_seed()
+
+    assert len(seed["memories"]) >= 50
+    assert sum(len(s["messages"]) for s in seed["sessions"]) >= 200
+
+
+# --- loading ------------------------------------------------------------------------------
+
+
+def test_seed_loads_once(seeded: sqlite3.Connection, clock: FakeClock) -> None:
+    assert seeded.execute("SELECT count(*) FROM memories").fetchone()[0] == 55
+    assert seeded.execute("SELECT count(*) FROM messages").fetchone()[0] == 200
+    assert seed_demo_user(seeded, clock) is False  # already there: nothing added
+    assert seeded.execute("SELECT count(*) FROM memories").fetchone()[0] == 55
+
+
+def test_profile_is_loaded_structured(seeded: sqlite3.Connection, clock: FakeClock) -> None:
+    p = ProfileStore(seeded, clock=clock, ids=SequentialIdGen()).get(U)
+
+    assert (p.name, p.phone, p.email) == ("Asha Rao", "+919999900001", "asha.rao@example.com")
+    assert [(a.label, a.area, a.is_default) for a in p.addresses] == [
+        ("Home", "HSR Layout", True),
+        ("Parents", "Jayanagar", False),
+    ]
+
+
+# --- the seed follows our own rules --------------------------------------------------------
+
+
+def test_every_explicit_fact_is_backed_by_the_users_words(seeded: sqlite3.Connection) -> None:
+    said = [norm(r[0]) for r in seeded.execute("SELECT content FROM messages WHERE role = 'user'")]
+    rows = seeded.execute(
+        "SELECT memory_id, evidence FROM memories"
+        " WHERE source = 'explicit' AND evidence IS NOT NULL"
+    ).fetchall()
+
+    assert rows
+    for memory_id, evidence in rows:
+        assert any(norm(evidence) in s for s in said), memory_id
+
+
+def test_forgotten_facts_are_tombstones_only(seeded: sqlite3.Connection) -> None:
+    rows = seeded.execute(
+        "SELECT value, evidence, forgotten_at FROM memories WHERE status = 'forgotten'"
+    ).fetchall()
+
+    assert len(rows) == 3
+    assert all(r["value"] is None and r["evidence"] is None and r["forgotten_at"] for r in rows)
+
+
+def test_no_pii_in_the_seeded_history(seeded: sqlite3.Connection) -> None:
+    text = " ".join(r[0] for r in seeded.execute("SELECT content FROM messages"))
+
+    for pii in ("Asha", "Rao", "99999", "example.com", "17th Main", "Temple Street"):
+        assert pii not in text, pii
+
+
+def test_one_active_fact_per_key_and_scope(seeded: sqlite3.Connection) -> None:
+    dupes = seeded.execute(
+        "SELECT key, scope, count(*) FROM memories WHERE status = 'active' AND key != 'note'"
+        " GROUP BY key, scope HAVING count(*) > 1"
+    ).fetchall()
+
+    assert dupes == []
+
+
+# --- the context builder over a lived-in user ------------------------------------------------
+
+
+def test_context_for_a_plumber_errand_over_the_seeded_user(
+    seeded: sqlite3.Connection, clock: FakeClock
+) -> None:
+    ids = SequentialIdGen()
+    errands = ErrandStore(seeded, clock=clock, ids=ids)
+    errands.create_session("sess_now", user_id=U)
+    errand = errands.create("sess_now", "book")
+    errands.set_requirements(errand.errand_id, Requirements(service="plumber"))
+    builder = ContextBuilder(
+        clock=clock,
+        errands=errands,
+        approvals=ApprovalStore(seeded, clock=clock, ids=ids),
+        memories=MemoryStore(seeded, clock=clock, ids=ids),
+        profiles=ProfileStore(seeded, clock=clock, ids=ids),
+        conversation=ConversationStore(seeded, clock=clock, ids=ids),
+        budget=ContextBudget(total=2500, memories=600),
+    )
+
+    p = builder.build(
+        user_id=U,
+        session_id="sess_now",
+        errand_id=errand.errand_id,
+        system="You are an errand assistant.",
+        run=None,
+    )
+
+    assert p.tokens["total"] <= 2500
+    assert p.messages_dropped > 0  # the long history doesn't all fit
+    assert "Earliest start: 10:00" in p.memories and "09:00" not in p.memories
+    assert "Budget for plumber: up to ₹1500" in p.memories and "1200" not in p.memories
+    assert "ring the bell twice" in p.memories
+    assert "BreezeFix" not in p.memories  # an AC preference: irrelevant to a plumber
+    assert "vegetarian" not in p.memories  # food: irrelevant
+    reasons = set(dict(p.excluded_memories).values())
+    assert {"superseded", "forgotten", "pending_confirmation", "rejected", "irrelevant"} <= reasons

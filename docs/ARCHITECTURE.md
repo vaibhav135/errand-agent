@@ -24,7 +24,7 @@ the enforcement mechanism. Each layer may import only the layers listed:
 | `store/`, `tracing/` | `core` | built |
 | `providers/` | `core` (the contract: `ToolEnv`, models, errors) | built |
 | `mocks/` | `core`, `store`, `providers` (the "external world" knows nothing of the agent) | Phase 2 |
-| `memory/` | `core`, `store`, `tracing` | Phase 4 |
+| `memory/` | `core`, `store`, `tracing`, `providers` (service vocabulary) | Phase 4 |
 | `workflow/` | `core`, `store`, `tracing`, `memory`, `providers` | Phase 3 |
 | `proactive/` | `core`, `store`, `tracing`, `memory`, `providers`, `workflow` | Phase 6 |
 | `agent/` | `core`, `store`, `tracing`, `memory`, `providers`, `workflow` | Phase 5 |
@@ -81,6 +81,8 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 | `ERRAND_MOCK_SEED` | `42` |
 | `ERRAND_MAX_MODEL_TURNS` / `ERRAND_MAX_TOOL_CALLS` / `ERRAND_MAX_RUN_SECONDS` | `8` / `20` / `60` (per-run hard limits) |
 | `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
+| `ERRAND_CONTEXT_TOKEN_BUDGET` / `ERRAND_MEMORY_TOKEN_BUDGET` | `6000` / `600` (estimated tokens per model turn) |
+| `ERRAND_SEED_DEMO_USER` | `true` (load the generated demo user into an empty DB) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | unset; standard names, no prefix |
 
 Local values go in `backend/.env` (gitignored), copied from the committed
@@ -426,6 +428,133 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
   `GuardedToolEnv` inside `committed()`: traced, never blocked, because this is
   finishing started work.
 
+### Memory: `memory/store.py`
+User information comes in three kinds, kept in three places:
+
+| Kind | Examples | Lifetime | Where |
+|---|---|---|---|
+| Profile (identity, contact) | name, phone, email, addresses | long-term, collected when first needed | `user_profile` (next commit); **never sent to the model** beyond address labels and areas |
+| Preferences (stable habits) | "never before 10am", "Sparks is my electrician" | long-term, across errands | `memories` |
+| Errand details | "this week", "under ₹1,500 this time" | this errand only | `errands.requirements` |
+
+- **What:** `MemoryStore`: remember (explicit), propose_inferred / confirm / reject,
+  correct, forget, list_for_user.
+- **Why:** remember stable preferences across sessions; let users inspect, correct and
+  forget them; keep explicit and inferred facts apart; and never let tool output become
+  a memory (the `memory_poisoning` fixture).
+- **How:** a closed key vocabulary with typed values (`earliest_start` / `latest_start`
+  "HH:MM", `budget_max_inr` and preferred / avoided provider scoped to a service,
+  `default_address` label, topic-tagged `note`), so relevance is decided in code.
+  **Explicit facts need a quote found verbatim in the user's own message**: a review
+  can't supply one, and the model can't invent a preference. Inferred facts start
+  `pending_confirmation` and count only once confirmed; a rejected suggestion isn't
+  offered again. One active fact per (user, key, scope); a new one supersedes the old
+  (`superseded_by`). **Forget wipes value and evidence** and keeps a tombstone that also
+  blocks re-inference. Changes emit a `memory` trace event; a forget event doesn't repeat
+  the value.
+
+### Inference: `memory/inference.py`, `workflow/suggestions.py`
+- **What:** pure rules `infer_from_bookings(bookings)` → suggestions;
+  `suggest_from_history(env, memories, user)` applies them to the provider's real
+  history (`list_bookings`).
+- **Why:** inferred preferences help ("your usual electrician?") but can be wrong, so
+  they are only ever suggested and count only once the user confirms.
+- **How:** deliberately conservative: **usual provider** = 2+ completed bookings with one
+  provider for a service; **earliest start** = 3+ completed or confirmed bookings all
+  starting at 09:00 IST or later. Cancellations are ignored and there is no "avoid"
+  rule (inferring dislike is too error-prone). Every suggestion goes through
+  `propose_inferred`, landing as `pending_confirmation`; forgotten, rejected or known
+  facts are skipped, so repeated runs create nothing new.
+
+### Profile: `memory/profile.py`
+- **What:** `ProfileStore`: name, phone, email and labelled addresses (one default), plus
+  `model_view()`.
+- **Why:** contact details are collected once, when first needed, and stored as typed
+  columns. They are also what the `exfiltration` fixture goes after, and the provider
+  contract never needs them, so the model never sees them.
+- **How:** every value must appear in the user's own message (phone digits-only, email
+  and name case-insensitively, address line and area verbatim). Phone is normalised to
+  `+91XXXXXXXXXX`, email lower-cased. `model_view()` exposes only address labels and
+  areas plus has-phone / has-email flags; the UI shows street, number and email straight
+  from the DB. `profile` trace events list changed field names, never values (the
+  sanitizer can't recognise a phone number, so values never enter an event).
+
+### History scrubbing: `memory/scrub.py`
+- **What:** `scrub_history(conn, user_id, replacements)`, called by `MemoryStore.forget`
+  and by `ProfileStore` when contact details are saved.
+- **Why:** selecting memories carefully is pointless if the raw transcript repeats them.
+  A forgotten "I'm allergic to cats" or a typed phone number would otherwise return to
+  the model through the recent-conversation window.
+- **How:** forgetting an explicit memory replaces its quoted words with `[forgotten]`;
+  saving the name, phone (any spacing, dashes or +91), email or street line replaces it
+  with `[name saved]` etc. (the area stays). Matching ignores case and spacing, the rest
+  of each message is untouched, and only that user's messages change (all sessions, both
+  roles). **Precise scope:** the model sees a typed value once, in the turn that
+  extracts and saves it; from then on it is gone from the stored history.
+
+### Conversation: `memory/conversation.py`
+- **What:** `ConversationStore.append / for_session / recent_for_user` over a `messages`
+  table (user and assistant text only; tool calls live in traces and workflow tables).
+- **Why:** the context builder fills its budget from the newest turn backwards, and the
+  seeded long prior conversation spans earlier sessions.
+- **How:** `recent_for_user` returns the user's messages across sessions, newest first;
+  ties within one second keep insertion order.
+
+### Memory selection: `memory/selection.py`, `memory/tokens.py`
+- **What:** `select_memories(memories, service=, budget_tokens=)` → included memories,
+  every excluded one **with its reason**, the rendered text and its token count.
+  `estimate_tokens(text)` = ceil(chars / 3.5).
+- **Why:** "only relevant, current preferences may reach the model; forgotten facts and
+  unconfirmed inferred facts never". Deciding it in code makes it provable per turn.
+- **How:**
+
+| Memory | Decision |
+|---|---|
+| forgotten / pending_confirmation / superseded / rejected | excluded, reason = status |
+| scoped to another service; note not about home services; service-scoped when no service is known yet | excluded, `irrelevant` |
+| active and relevant | included by priority (provider, time window, budget, default address, notes), newest first, while it fits; else `over_budget` |
+
+  Each line says where the fact came from ("you told me" / "inferred, you confirmed").
+  The token estimate is deterministic (offline evals) and pessimistic: English averages
+  about 4 characters per token, so packets built to it stay under the real budget.
+
+### Context builder: `workflow/context.py`
+- **What:** `ContextBuilder.build(...)` → `ContextPacket` (system, state, memories,
+  messages, per-section tokens) plus a `context_sent` trace event every turn.
+- **Why:** a fixed budget; only relevant, current preferences; never forgotten or
+  unconfirmed facts; never profile PII; and a per-turn log that tests can check.
+- **How:** filled in priority order until `ERRAND_CONTEXT_TOKEN_BUDGET` (6000) is used:
+
+```
+1. system prompt                                         always
+2. state: today (IST), errand kind/state, requirements,  always (structured, from the DB,
+   still needed / ask once, pending approval,             so old turns can be dropped
+   address labels+areas, has phone/email                   without an LLM summary)
+3. relevant memories                                     ≤ ERRAND_MEMORY_TOKEN_BUDGET (600)
+4. recent conversation, newest first while it fits       then restored to chronological
+```
+
+  If 1 + 2 alone don't fit, `ContextOverflow` is raised instead of truncating the system
+  prompt. `context_sent` records the budget, tokens per section, included memory ids,
+  every excluded id with its reason, messages included and dropped, and the state and
+  memory text (no message bodies; they're in `messages`). Tests prove forgotten and
+  pending values, and the user's name, phone, email and street, appear nowhere in the
+  packet.
+
+### Demo-user seed: `memory/seedgen.py`, `memory/seed.py`
+- **What:** a deterministic generator (`make seed-data`) writes the committed
+  `memory/data/demo_user.json`: a fictional profile, **55 memories** and **200 messages**
+  over 10 past sessions. `seed_demo_user()` loads it into an empty `agent.db` at startup
+  (`ERRAND_SEED_DEMO_USER`, default on).
+- **Why:** the assignment's "≥50 stored memories and a long prior conversation", so the
+  demo and evals exercise context management on a realistic, lived-in user.
+- **How:** hand-written key facts cover every state (explicit active, superseded chains,
+  forgotten tombstones, pending / rejected / confirmed inferences); ~30 irrelevant notes
+  come from templates with a fixed seed. The seed obeys our own rules (each explicit
+  quote appears in a user message, forgotten facts only as `[forgotten]`, PII only as
+  `[phone saved]` etc.) and every value passes the store's validation. A test fails if
+  the committed file differs from the generator's output.
+
 ### Run outcomes: `workflow/outcomes.py`
 - **What:** `RunOutcome` (kind, user-facing message, optional booking / approval card),
   mappers `for_execution` / `for_change` / `for_limit` / `for_error`, and
@@ -582,9 +711,11 @@ crashes.
 | `run_started` / `run_finished` | `trigger` / `outcome`, `totals` (calls, tokens, cost, `cost_complete`, `duration_ms`) |
 | `state_transition` | `from`, `to`, `reason` |
 | `model_call` | `model`, `input_tokens`, `output_tokens`, `latency_ms`, `cost_usd` |
-| `context_sent` | memory IDs included, token count, budget |
+| `context_sent` | budget, tokens per section, memory ids included, excluded ids with reasons, messages included / dropped, state and memory text |
 | `tool_call` | `tool`, `args`, `result`, `status`, `latency_ms`, `error` |
 | `approval` | requested / granted / rejected / invalidated, `approval_id`, fingerprint |
+| `memory` | remembered / suggested / confirmed / rejected / forgotten, key, scope, source, status |
+| `profile` | changed field names only (never values) |
 | `limit_hit`, `error` | which limit / error type and message |
 
 ## Runtime data

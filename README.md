@@ -16,6 +16,7 @@ make install   # backend + frontend deps
 make dev       # FastAPI on :8000, Vite on :5173 (open http://localhost:5173)
 make test      # backend tests
 make lint      # ruff, pyright, oxlint, tsc
+make seed-data # regenerate the demo user's seed (memories + conversation)
 make           # list all targets
 ```
 
