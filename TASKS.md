@@ -78,7 +78,9 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
       BookingCard
 - [x] TracePane (runs, one-line events, expand to JSON)
 - [x] Memory and Bookings tabs
-- [ ] Demo tab; end-to-end run with `make dev`
+- [x] Demo tab; end-to-end run with `make dev`
+- [x] UI polish: dark mode (Catppuccin Mocha), resizable / hideable side panel, toasts
+      for every change, clearer selected states
 
 ## Phase 7 — Proactive follow-up
 - [ ] Simulated provider-cancellation event + monitor

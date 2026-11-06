@@ -6,6 +6,7 @@
 // user asks); each says where it came from.
 
 import { type FormEvent, useState } from 'react'
+import { toast } from 'sonner'
 
 import {
   confirmSuggestion,
@@ -17,6 +18,7 @@ import {
 import type { Memory } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { useLoad } from '@/hooks/useLoad'
+import { errorText } from '@/lib/errors'
 
 const isPersonal = (m: Memory) => m.key === 'note' && m.topic !== 'home_services'
 const isProvider = (m: Memory) => m.key === 'preferred_provider' || m.key === 'avoided_provider'
@@ -94,26 +96,29 @@ function FactRow({ memory, onChanged }: { memory: Memory; onChanged: () => void 
     const typed = value.trim()
     const sent = memory.key === 'budget_max_inr' && /^\d+$/.test(typed) ? Number(typed) : typed
     try {
-      await correctMemory(memory.memory_id, sent)
+      const updated = await correctMemory(memory.memory_id, sent)
       setEditing(false)
+      toast.success(`Updated: ${updated.text}`)
       onChanged()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      // Stays beside the field: "doesn't fit: ..." is about what you just typed.
+      setError(errorText(err))
     }
   }
 
   const forget = async () => {
     try {
       await forgetMemory(memory.memory_id)
+      toast.success(`Forgotten: ${memory.text}`)
       onChanged()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      toast.error(`Couldn't forget that: ${errorText(err)}`)
     }
   }
 
   return (
     <li aria-label={memory.text} className="px-3 py-2 text-sm">
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-center justify-between gap-2">
         <div>
           <div>{memory.text}</div>
           <div className="text-xs text-muted-foreground">
@@ -159,20 +164,19 @@ function FactRow({ memory, onChanged }: { memory: Memory; onChanged: () => void 
 }
 
 function SuggestionRow({ memory, onChanged }: { memory: Memory; onChanged: () => void }) {
-  const [error, setError] = useState<string | null>(null)
-
   const decide = async (confirm: boolean) => {
     try {
       await (confirm ? confirmSuggestion(memory.memory_id) : rejectSuggestion(memory.memory_id))
+      toast.success(`${confirm ? 'Saved' : 'Dismissed'}: ${memory.text}`)
       onChanged()
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
+      toast.error(`Couldn't ${confirm ? 'save' : 'dismiss'} that: ${errorText(err)}`)
     }
   }
 
   return (
     <li aria-label={memory.text} className="px-3 py-2 text-sm">
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex items-center justify-between gap-2">
         <div>
           <div>{memory.text}</div>
           {memory.reason && <div className="text-xs text-muted-foreground">{memory.reason}</div>}
@@ -186,7 +190,6 @@ function SuggestionRow({ memory, onChanged }: { memory: Memory; onChanged: () =>
           </Button>
         </div>
       </div>
-      {error && <p className="mt-1 text-xs text-destructive">{error}</p>}
     </li>
   )
 }

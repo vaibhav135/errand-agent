@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { fakeApi } from '@/test/fakeApi'
+import { findToast, renderWithToasts } from '@/test/toasts'
 
 import { DemoTab } from './DemoTab'
 
@@ -40,16 +41,28 @@ const ROUTES = {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('DemoTab', () => {
-  it('scripts the next booking and says what it set', async () => {
+  it('scripts the next booking and says what it set in a toast', async () => {
     const { calls } = fakeApi(ROUTES)
-    render(<DemoTab version={0} onChanged={() => undefined} />)
+    renderWithToasts(<DemoTab version={0} onChanged={() => undefined} />)
 
     await userEvent.click(await screen.findByRole('button', { name: 'Times out after succeeding' }))
 
     expect(calls.find((c) => c.path === '/api/demo/next-book')?.body).toEqual({
       outcome: 'timeout_booked',
     })
-    expect(await screen.findByRole('status')).toHaveTextContent(/next booking/i)
+    expect(await findToast('Next booking: times out after succeeding.')).toBeInTheDocument()
+  })
+
+  it('shows a refused action as an error toast', async () => {
+    fakeApi({
+      ...ROUTES,
+      'POST /api/demo/reset': Response.json({ detail: 'demo mode is off' }, { status: 404 }),
+    })
+    renderWithToasts(<DemoTab version={0} onChanged={() => undefined} />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Reset' }))
+
+    expect(await findToast("Didn't work: demo mode is off")).toBeInTheDocument()
   })
 
   it('lets a provider cancel one of the upcoming confirmed bookings', async () => {

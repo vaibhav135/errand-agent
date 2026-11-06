@@ -32,7 +32,7 @@ function Group({ title, bookings, empty }: { title: string; bookings: BookingRow
       ) : (
         <ul className="divide-y rounded border">
           {bookings.map((b) => (
-            <li key={b.booking_id} className="flex items-start justify-between gap-2 px-3 py-2 text-sm">
+            <li key={b.booking_id} className="flex items-center justify-between gap-2 px-3 py-2 text-sm">
               <div>
                 <div className="font-medium">{b.provider_name}</div>
                 <div className="text-muted-foreground">

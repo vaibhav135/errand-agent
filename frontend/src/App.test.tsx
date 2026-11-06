@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import App from './App'
 import { fakeApi } from './test/fakeApi'
+import { findToast } from './test/toasts'
 
 const BASE = {
   'GET /api/health': { status: 'ok' },
@@ -59,6 +60,7 @@ describe('App shell', () => {
 
     await waitFor(() => expect(session).toHaveTextContent('sess_new'))
     expect(localStorage.getItem('errand.session')).toBe('sess_new')
+    expect(await findToast('Started a new session')).toBeInTheDocument() // App mounts the Toaster
   })
 
   it('shows a turn’s trace live in the Trace tab', async () => {
@@ -78,10 +80,42 @@ describe('App shell', () => {
     render(<App />)
     await waitFor(() => expect(screen.getByLabelText('Session')).toHaveTextContent('sess_new'))
 
-    await userEvent.type(screen.getByRole('textbox', { name: 'Message' }), 'hi{Enter}')
+    // Focus, then type, without a click: jsdom has no layout, so every element sits at
+    // (0,0) and a click lands "on" the resize handle, whose drag start blocks focus.
+    // In a browser the handle's hit area is its real rectangle.
+    screen.getByRole('textbox', { name: 'Message' }).focus()
+    await userEvent.keyboard('hi{Enter}')
 
     const run = await screen.findByRole('group', { name: /run_9/ })
     expect(run).toHaveTextContent('list_memories · 4 ms')
+  })
+
+  it('hides the side panel so the chat takes the full width, and brings it back', async () => {
+    fakeApi({ ...BASE, 'GET /api/demo': { enabled: false } })
+    render(<App />)
+    await waitFor(() => expect(screen.getByLabelText('Session')).toHaveTextContent('sess_new'))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Hide side panel' }))
+
+    expect(screen.queryByRole('region', { name: 'Side panel' })).not.toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Chat' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('button', { name: 'Show side panel' }))
+
+    expect(screen.getByRole('region', { name: 'Side panel' })).toBeInTheDocument()
+  })
+
+  it('remembers a hidden side panel across a reload', async () => {
+    fakeApi({ ...BASE, 'GET /api/demo': { enabled: false } })
+    const first = render(<App />)
+    await waitFor(() => expect(screen.getByLabelText('Session')).toHaveTextContent('sess_new'))
+    await userEvent.click(screen.getByRole('button', { name: 'Hide side panel' }))
+    first.unmount()
+
+    render(<App />)
+
+    await waitFor(() => expect(screen.getByLabelText('Session')).toHaveTextContent('sess_new'))
+    expect(screen.queryByRole('region', { name: 'Side panel' })).not.toBeInTheDocument()
   })
 
   it('starts a new session when the remembered one is gone', async () => {

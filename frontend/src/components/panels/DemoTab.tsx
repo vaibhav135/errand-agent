@@ -2,14 +2,17 @@
 // provider side misbehave on cue, for a recorded demo of the failure handling.
 //
 // Each control is one call to /api/demo/* (MockControl); the agent never sees these.
-// Every action says what it set, so the person demoing knows what the next turn will hit.
+// Every action says what it set (a toast), so the person demoing knows what the next
+// turn will hit.
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 
-import { ApiError, demoAction, getBookings, getDemoProviders } from '@/api/client'
+import { demoAction, getBookings, getDemoProviders } from '@/api/client'
 import { formatSlot } from '@/components/chat/format'
 import { Button } from '@/components/ui/button'
 import { useLoad } from '@/hooks/useLoad'
+import { errorText } from '@/lib/errors'
 
 const NEXT_BOOK = [
   { outcome: 'timeout_booked', label: 'Times out after succeeding' },
@@ -26,7 +29,6 @@ export function DemoTab({ version, onChanged }: { version: number; onChanged: ()
   const [bookingId, setBookingId] = useState('')
   const [providerId, setProviderId] = useState('')
   const [percent, setPercent] = useState('20')
-  const [status, setStatus] = useState<string | null>(null)
 
   // Only these can be cancelled by a provider (MockControl refuses anything else).
   const cancellable = (bookings.data ?? []).filter(
@@ -36,10 +38,10 @@ export function DemoTab({ version, onChanged }: { version: number; onChanged: ()
   async function run(action: Parameters<typeof demoAction>[0], body: object | undefined, done: string) {
     try {
       await demoAction(action, body as Record<string, unknown> | undefined)
-      setStatus(done)
+      toast.success(done)
       onChanged()
     } catch (err) {
-      setStatus(`Didn't work: ${err instanceof ApiError ? err.message : String(err)}`)
+      toast.error(`Didn't work: ${errorText(err)}`)
     }
   }
 
@@ -135,12 +137,6 @@ export function DemoTab({ version, onChanged }: { version: number; onChanged: ()
       <Button size="sm" variant="destructive" onClick={() => run('reset', undefined, 'Back to normal.')}>
         Reset
       </Button>
-
-      {status && (
-        <p role="status" className="rounded border bg-muted px-3 py-2">
-          {status}
-        </p>
-      )}
     </div>
   )
 }

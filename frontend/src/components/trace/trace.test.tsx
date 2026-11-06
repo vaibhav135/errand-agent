@@ -55,6 +55,7 @@ describe('summarize', () => {
     [ev('r', 1, 'state_transition', { from: 'comparing', to: 'awaiting_approval' }), 'comparing → awaiting_approval'],
     [ev('r', 1, 'approval', { status: 'granted', action: 'book', via: 'button' }), 'book granted · via button'],
     [ev('r', 1, 'context_sent', { tokens: { total: 3400 }, messages_included: 3, messages_out_of_scope: 200 }), '3,400 tok · 3 messages · 200 out of scope'],
+    [ev('r', 1, 'context_sent', { tokens: { total: 900 }, messages_included: 1, messages_out_of_scope: 0 }), '900 tok · 1 message · 0 out of scope'],
     [ev('r', 1, 'limit_hit', { limit: 'context_tokens', used: 4400, allowed: 4000 }), 'context_tokens 4400 / 4000'],
   ])('%#: %s', (event, line) => {
     expect(summarize(event)).toBe(line)
@@ -78,13 +79,39 @@ describe('TracePane', () => {
     expect(within(run).getByText('propose_booking · 90 ms')).toBeInTheDocument()
   })
 
+  it('says "1 call", not "1 calls"', () => {
+    const runs = runsOf(
+      ev('run_8', 0, 'run_started', { trigger: 'user_message' }),
+      ev('run_8', 1, 'run_finished', { outcome: 'answered', totals: { ...TOTALS, model_calls: 1 } }),
+    )
+
+    render(<TracePane runs={runs} />)
+
+    expect(screen.getByRole('group', { name: /run_8/ })).toHaveTextContent(/(?<!\d)1 call ·/) // not preceded by a digit (so not "11 call")
+  })
+
   it('expands an event to its JSON on click', async () => {
     const runs = runsOf(ev('r', 1, 'agent_tool', { tool: 'list_memories', status: 'ok', latency_ms: 5, args: { include_personal_notes: true } }))
     render(<TracePane runs={runs} />)
 
-    await userEvent.click(screen.getByRole('button', { name: /list_memories/ }))
+    const row = screen.getByRole('button', { name: /list_memories/ })
+    expect(row).toHaveAttribute('aria-expanded', 'false')
+    await userEvent.click(row)
 
     expect(screen.getByText(/"include_personal_notes": true/)).toBeInTheDocument()
+    expect(row).toHaveAttribute('aria-expanded', 'true') // also what styles an open row
+  })
+
+  it('says whether a run is open', async () => {
+    const runs = runsOf(ev('run_3', 0, 'run_started', { trigger: 'user_message' }))
+    render(<TracePane runs={runs} />)
+
+    const header = within(screen.getByRole('group', { name: /run_3/ })).getAllByRole('button')[0]
+    const before = header.getAttribute('aria-expanded')
+    await userEvent.click(header)
+
+    expect(before).toMatch(/^(true|false)$/)
+    expect(header.getAttribute('aria-expanded')).toBe(before === 'true' ? 'false' : 'true')
   })
 
   it('marks a run still in progress, and flags limits', () => {

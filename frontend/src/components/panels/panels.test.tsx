@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Memory } from '@/api/types'
 import { fakeApi } from '@/test/fakeApi'
+import { findToast, renderWithToasts } from '@/test/toasts'
 
 import { BookingsTab } from './BookingsTab'
 import { MemoryTab } from './MemoryTab'
@@ -78,6 +79,26 @@ describe('MemoryTab', () => {
     )
   })
 
+  it('confirms a correction with a toast; a refused one stays beside the field', async () => {
+    fakeApi({
+      'GET /api/memories': MEMORIES,
+      'PATCH /api/memories/m_budget': memory('m_new', 'budget_max_inr', 'Budget: up to ₹1200'),
+      'PATCH /api/memories/m_start': Response.json({ detail: "doesn't fit" }, { status: 422 }),
+    })
+    renderWithToasts(<MemoryTab version={0} />)
+
+    const budget = await screen.findByRole('listitem', { name: /Budget for plumber/ })
+    await userEvent.click(within(budget).getByRole('button', { name: 'Edit' }))
+    await userEvent.type(within(budget).getByRole('textbox', { name: 'New value' }), '{Enter}')
+    expect(await findToast('Updated: Budget: up to ₹1200')).toBeInTheDocument()
+
+    const start = screen.getByRole('listitem', { name: /Earliest start/ })
+    await userEvent.click(within(start).getByRole('button', { name: 'Edit' }))
+    await userEvent.type(within(start).getByRole('textbox', { name: 'New value' }), '{Enter}')
+    expect(await within(start).findByText("doesn't fit")).toBeInTheDocument()
+    expect(screen.queryByText(/Couldn't/)).not.toBeInTheDocument()
+  })
+
   it('shows why a correction was refused', async () => {
     fakeApi({
       'GET /api/memories': MEMORIES,
@@ -125,6 +146,40 @@ describe('MemoryTab', () => {
     await waitFor(() =>
       expect(calls.some((c) => c.path === '/api/memories/m_sparks/confirm')).toBe(true),
     )
+  })
+
+  it('confirms each change with a toast', async () => {
+    fakeApi({
+      'GET /api/memories': MEMORIES,
+      'POST /api/memories/m_sparks/confirm': MEMORIES.suggestions[0],
+      'DELETE /api/memories/m_dog': new Response(null, { status: 204 }),
+    })
+    renderWithToasts(<MemoryTab version={0} />)
+
+    const suggestion = await screen.findByRole('listitem', { name: /Sparks/ })
+    await userEvent.click(within(suggestion).getByRole('button', { name: 'Confirm' }))
+    expect(await findToast('Saved: Usual electrician: Sparks Electricals')).toBeInTheDocument()
+
+    const dog = screen.getByRole('listitem', { name: /dog at home/ })
+    await userEvent.click(within(dog).getByRole('button', { name: 'Forget' }))
+    await userEvent.click(within(dog).getByRole('button', { name: 'Forget? Yes' }))
+    expect(await findToast('Forgotten: Note: dog at home, ring the bell twice')).toBeInTheDocument()
+  })
+
+  it('shows a failed change as an error toast', async () => {
+    fakeApi({
+      'GET /api/memories': MEMORIES,
+      'POST /api/memories/m_sparks/reject': Response.json(
+        { detail: 'already decided' },
+        { status: 409 },
+      ),
+    })
+    renderWithToasts(<MemoryTab version={0} />)
+
+    const suggestion = await screen.findByRole('listitem', { name: /Sparks/ })
+    await userEvent.click(within(suggestion).getByRole('button', { name: 'Reject' }))
+
+    expect(await findToast("Couldn't dismiss that: already decided")).toBeInTheDocument()
   })
 
   it('reloads when something changed elsewhere', async () => {

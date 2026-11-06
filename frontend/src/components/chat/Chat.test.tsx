@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import type { Reply } from '@/api/types'
 import { fakeApi } from '@/test/fakeApi'
+import { findToast, renderWithToasts } from '@/test/toasts'
 
 import { Chat } from './Chat'
 
@@ -162,6 +163,28 @@ describe('Chat', () => {
 
     expect(await within(card).findByText('Saved')).toBeInTheDocument()
     expect(calls.some((c) => c.path === '/api/memories/mem_7/confirm')).toBe(true)
+  })
+
+  it('says so when saving a suggestion fails, instead of failing silently', async () => {
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+      'POST /api/memories/mem_7/confirm': Response.json({ detail: 'already decided' }, { status: 409 }),
+    })
+    renderWithToasts(<Chat sessionId={SESSION} />)
+    await type('what have you noticed?')
+    stream.send(
+      'final',
+      reply({ suggestions: [{ memory_id: 'mem_7', text: 'Usual electrician: Sparks', reason: '2 jobs' }] }),
+    )
+    stream.close()
+
+    const card = await screen.findByRole('group', { name: 'Suggestions from your bookings' })
+    await userEvent.click(within(card).getByRole('button', { name: 'Confirm' }))
+
+    expect(await findToast("Couldn't save that: already decided")).toBeInTheDocument()
+    expect(within(card).queryByText('Saved')).not.toBeInTheDocument()
   })
 
   it('explains a turn the server refused', async () => {

@@ -20,7 +20,12 @@ import { type ComponentType, useState } from 'react'
 import type { TraceEvent } from '@/api/types'
 import { cn } from '@/lib/utils'
 
-import { isAlert, newestFirst, type Runs, type RunView, seconds, summarize } from './model'
+import { count, isAlert, newestFirst, type Runs, type RunView, seconds, summarize } from './model'
+
+// An open run or event: tinted, with an accent bar on the left. Keyed off aria-expanded,
+// so what screen readers hear and what's drawn can't disagree. The bar is an inset
+// shadow, not a border, so opening a row doesn't shift its text.
+const OPEN_ROW = 'aria-expanded:bg-muted aria-expanded:shadow-[inset_3px_0_0_var(--color-primary)]'
 
 const ICON: Record<string, ComponentType<{ className?: string }>> = {
   run_started: Play,
@@ -59,29 +64,33 @@ function RunGroup({ run, open: initiallyOpen }: { run: RunView; open: boolean })
   const Chevron = open ? ChevronDown : ChevronRight
 
   return (
-    <div role="group" aria-label={run.run_id} className="rounded border">
+    <div role="group" aria-label={run.run_id} className="overflow-hidden rounded border">
+      {/* One block for both header lines, so the open tint covers the totals too. */}
       <button
         type="button"
-        className="flex w-full items-center gap-2 px-2 py-1.5 text-left hover:bg-muted"
+        aria-expanded={open}
+        className={cn('block w-full px-3 py-2 text-left hover:bg-muted', OPEN_ROW)}
         onClick={() => setOpen(!open)}
       >
-        <Chevron className="size-3 shrink-0" />
-        <span className="truncate">{run.run_id}</span>
-        <span className="text-muted-foreground">{String(started?.trigger ?? '')}</span>
-        <span className={cn('ml-auto font-semibold', !finished && 'text-muted-foreground')}>
-          {finished ? String(finished.outcome) : 'running…'}
+        <span className="flex items-center gap-2">
+          <Chevron className="size-3 shrink-0" />
+          <span className="truncate">{run.run_id}</span>
+          <span className="text-muted-foreground">{String(started?.trigger ?? '')}</span>
+          <span className={cn('ml-auto font-semibold', !finished && 'text-muted-foreground')}>
+            {finished ? String(finished.outcome) : 'running…'}
+          </span>
         </span>
+        {totals && (
+          <span className="mt-1 block pl-5 text-muted-foreground">
+            {count(totals.model_calls, 'call')} ·{' '}
+            {(Number(totals.input_tokens) + Number(totals.output_tokens)).toLocaleString('en-US')}{' '}
+            tok · {totals.cost_usd != null && totals.cost_complete ? `$${Number(totals.cost_usd).toFixed(4)}` : 'cost n/a'}{' '}
+            · {seconds(totals.duration_ms)}
+          </span>
+        )}
       </button>
-      {totals && (
-        <div className="px-7 pb-1 text-muted-foreground">
-          {totals.model_calls} calls ·{' '}
-          {(Number(totals.input_tokens) + Number(totals.output_tokens)).toLocaleString('en-US')}{' '}
-          tok · {totals.cost_usd != null && totals.cost_complete ? `$${Number(totals.cost_usd).toFixed(4)}` : 'cost n/a'}{' '}
-          · {seconds(totals.duration_ms)}
-        </div>
-      )}
       {open && (
-        <ul className="border-t py-1">
+        <ul className="border-t py-1.5">
           {run.events.map((e) => (
             <EventRow key={e.seq} event={e} />
           ))}
@@ -102,8 +111,10 @@ function EventRow({ event }: { event: TraceEvent }) {
       <button
         type="button"
         data-alert={alert}
+        aria-expanded={open}
         className={cn(
-          'flex w-full items-center gap-2 px-2 py-0.5 text-left hover:bg-muted',
+          'flex w-full items-center gap-2 px-3 py-1 text-left hover:bg-muted',
+          OPEN_ROW,
           alert && 'text-destructive',
         )}
         onClick={() => setOpen(!open)}

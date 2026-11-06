@@ -1004,9 +1004,31 @@ user message
     fails without booking; a provider cancels one of your upcoming confirmed bookings;
     a provider's holds quote N% more than search (percent in the UI, a fraction on the
     wire); Reset. Pickers start empty so nothing fires on a default nobody chose; each
-    action says what it set, and bumps `version` so Bookings reloads.
+    action says what it set in a toast, and bumps `version` so Bookings reloads.
+  - Toasts (`ui/sonner.tsx`, one `<Toaster>` in `App`): every change the user makes
+    outside the chat turn says how it went: memory confirm / reject / correct / forget,
+    the chat's suggestion card, demo actions, new session. Errors are red toasts, except
+    a refused correction, which stays beside its field. Approve / Decline get none: the
+    outcome already arrives as a chat message. Colours come from the theme tokens, so
+    no theme prop (shadcn's `next-themes` dependency was dropped).
+  - Selected states: the active tab has a solid fill, semibold text and a primary
+    underline; an open trace run or event is tinted with a primary bar on its left,
+    styled from `aria-expanded` so the look and what screen readers hear agree.
   - `Workspace` holds one session's chat and side panel and is keyed by session id, so
-    a new session starts with a clean chat and trace.
+    a new session starts with a clean chat and trace. The two sit in a resizable group
+    (shadcn `resizable`, react-resizable-panels v4): drag the divider to resize; drag
+    the panel shut, or use the header's panel button, and it unmounts so the chat takes
+    the full width. `useSidePanel` remembers hidden/open and the width separately, the
+    width only while open (a dragged-shut panel would otherwise reopen at 0%). jsdom
+    has no layout, so in tests every click lands on the divider's hit area and the
+    library's drag start blocks focus: tests focus a textbox, then type.
+  - Theme (`src/hooks/useTheme.ts`, `ThemeToggle` in the header): light or dark via the
+    `dark` class on `<html>`. Dark is Catppuccin Mocha (the `--ctp-*` values in
+    `index.css`; another flavour is a swap of those values). First visit follows the
+    system; a pick is kept in localStorage. A small script in `index.html` applies the
+    same rule before the first paint, so a dark reload doesn't flash white.
+    Buttons, tabs and selects get a pointer cursor (`index.css` base layer), which
+    Tailwind v4 no longer sets.
   - Tests: Vitest + Testing Library on jsdom (`vitest.config.ts` reuses the Vite config,
     so `@/` resolves the same); `src/test/fakeApi.ts` routes `fetch` by method and path.
     `make test` runs backend and frontend.

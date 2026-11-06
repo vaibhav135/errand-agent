@@ -1,10 +1,12 @@
 // Cards drawn by code from the reply's verified data, never from the model's text.
 
 import { useState } from 'react'
+import { toast } from 'sonner'
 
 import { confirmSuggestion, rejectSuggestion } from '@/api/client'
 import type { Approval, Booking, OutcomeKind, Suggestion } from '@/api/types'
 import { Button } from '@/components/ui/button'
+import { errorText } from '@/lib/errors'
 
 import { formatInr, formatSlot } from './format'
 
@@ -86,8 +88,15 @@ export function SuggestionsCard({
   const [state, setState] = useState<Record<string, 'Saved' | 'Dismissed'>>({})
 
   const act = async (s: Suggestion, confirm: boolean) => {
-    await (confirm ? confirmSuggestion(s.memory_id) : rejectSuggestion(s.memory_id))
+    try {
+      await (confirm ? confirmSuggestion(s.memory_id) : rejectSuggestion(s.memory_id))
+    } catch (err) {
+      // Was unhandled: a failed save left the card as it was, with no word why.
+      toast.error(`Couldn't ${confirm ? 'save' : 'dismiss'} that: ${errorText(err)}`)
+      return
+    }
     setState((st) => ({ ...st, [s.memory_id]: confirm ? 'Saved' : 'Dismissed' }))
+    toast.success(`${confirm ? 'Saved' : 'Dismissed'}: ${s.text}`)
     onChanged?.()
   }
 
@@ -95,7 +104,7 @@ export function SuggestionsCard({
     <CardFrame title="Suggestions from your bookings">
       <ul className="space-y-2">
         {suggestions.map((s) => (
-          <li key={s.memory_id} className="flex items-start justify-between gap-3">
+          <li key={s.memory_id} className="flex items-center justify-between gap-3">
             <div>
               <div>{s.text}</div>
               {s.reason && <div className="text-xs text-muted-foreground">{s.reason}</div>}

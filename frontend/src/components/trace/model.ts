@@ -28,6 +28,12 @@ export function newestFirst(runs: Runs): RunView[] {
 
 const n = (value: unknown) => Number(value ?? 0).toLocaleString('en-US')
 
+/** "1 call", "2 calls": a count with its noun. */
+export function count(value: unknown, noun: string): string {
+  const num = Number(value ?? 0)
+  return `${n(num)} ${noun}${num === 1 ? '' : 's'}`
+}
+
 export function seconds(ms: unknown): string {
   return `${(Number(ms ?? 0) / 1000).toFixed(1)} s`
 }
@@ -53,7 +59,7 @@ export function summarize(e: TraceEvent): string {
       return `${f.action} ${f.status}${f.via ? ` · via ${f.via}` : ''}`
     case 'context_sent': {
       const tokens = f.tokens as { total?: number } | undefined
-      return `${n(tokens?.total)} tok · ${f.messages_included} messages · ${f.messages_out_of_scope ?? 0} out of scope`
+      return `${n(tokens?.total)} tok · ${count(f.messages_included, 'message')} · ${n(f.messages_out_of_scope)} out of scope`
     }
     case 'limit_hit':
       return `${f.limit} ${f.used} / ${f.allowed}`
