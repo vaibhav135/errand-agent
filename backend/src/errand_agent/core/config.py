@@ -24,7 +24,7 @@ How:  `data_dir` is the root; `agent_db_path`, `mock_db_path` and `trace_dir`
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     model: str = DEFAULT_MODEL
     # The quarantined review reader's model; use `review_model_spec` for the resolved one.
     review_model: str | None = None
+    # Anthropic models only (D5). Effort sets how much Claude thinks (Sonnet 5.5 thinks
+    # adaptively by default at "high"; it can't be switched off); None = the API's
+    # default. prompt_cache caches the stable prefix (tool definitions, instructions).
+    # Defaults measured with `make latency`: low effort halved errand turns, caching
+    # cut cost 55-83%, same steps and outcomes.
+    effort: Literal["low", "medium", "high", "xhigh", "max"] | None = "low"
+    prompt_cache: bool = True
     mock_seed: int = 42
 
     # Hard per-run limits (one run = one inbound event handled end to end).

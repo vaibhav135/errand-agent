@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
@@ -265,6 +265,66 @@ describe('Chat', () => {
     expect(bubble).toHaveAttribute('data-bubble', 'assistant')
     expect(bubble).not.toContainElement(card) // a card is not a box inside the bubble
     expect(bubble?.closest('article')).toContainElement(card) // but it belongs to the reply
+  })
+
+  // BUG-10: a turn with no tool call showed nothing until the first word arrived.
+  it('shows that the agent is working before the first word (BUG-10)', async () => {
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+    })
+    render(<Chat sessionId={SESSION} />)
+
+    await type('hello')
+
+    expect(screen.getByRole('status', { name: 'Agent is typing' })).toBeInTheDocument()
+    stream.send('text', { chunk: 'Hel' })
+    await waitFor(() =>
+      expect(screen.queryByRole('status', { name: 'Agent is typing' })).not.toBeInTheDocument(),
+    )
+  })
+
+  it('swaps the typing dots for a tool’s progress line', async () => {
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+    })
+    render(<Chat sessionId={SESSION} />)
+    await type('find me a plumber')
+    expect(screen.getByRole('status', { name: 'Agent is typing' })).toBeInTheDocument()
+
+    stream.send('tool', { tool: 'search_and_compare' })
+
+    expect(await screen.findByText('Searching providers…')).toBeInTheDocument()
+    expect(screen.queryByRole('status', { name: 'Agent is typing' })).not.toBeInTheDocument()
+  })
+
+  it('marks the reply as streaming until the final arrives, revealing text steadily', async () => {
+    const stream = liveStream()
+    fakeApi({
+      [`GET /api/sessions/${SESSION}/messages`]: [],
+      [`POST /api/sessions/${SESSION}/messages`]: stream.response,
+    })
+    render(<Chat sessionId={SESSION} />)
+    await type('hello')
+    const long = 'Hello! ' + 'I can help with plumbers, electricians and more. '.repeat(4)
+
+    stream.send('text', { chunk: long })
+
+    const bubble = await waitFor(() => {
+      const el = document.querySelector('[data-bubble="assistant"]')
+      expect(el).not.toBeNull()
+      return el as HTMLElement
+    })
+    expect(bubble).toHaveAttribute('data-streaming', 'true') // the caret shows
+    expect(bubble.textContent!.length).toBeLessThan(long.trim().length) // not all at once
+    await waitFor(() => expect(bubble).toHaveTextContent(long.trim())) // but soon all of it
+
+    stream.send('final', reply({ message: long.trim() }))
+    stream.close()
+    await waitFor(() => expect(bubble).toHaveAttribute('data-streaming', 'false'))
   })
 
   it('explains a turn the server refused', async () => {

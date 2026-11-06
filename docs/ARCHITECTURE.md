@@ -83,6 +83,8 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 | `ERRAND_AGENT_DB_PATH` / `ERRAND_MOCK_DB_PATH` / `ERRAND_TRACE_DIR` | under `data_dir` |
 | `ERRAND_MODEL` | `anthropic:claude-sonnet-5-5` ($2 / $10 per M tokens: plans multi-step tool use well at half Opus's price; `test` = offline TestModel) |
 | `ERRAND_REVIEW_MODEL` | follows an explicitly set `ERRAND_MODEL` (one key of any provider is enough); otherwise `anthropic:claude-haiku-5-5` ($0.10 / $0.50: it only picks fixed labels) |
+| `ERRAND_EFFORT` | `low` (Anthropic thinking effort for every request; Sonnet 5.5 otherwise thinks at `high`; measured in DECISIONS D5) |
+| `ERRAND_PROMPT_CACHE` | `true` (cache the tool definitions and instructions; cache reads/writes traced and priced at their own rates: D5) |
 | `ERRAND_MOCK_SEED` | `42` |
 | `ERRAND_MAX_MODEL_TURNS` / `ERRAND_MAX_TOOL_CALLS` / `ERRAND_MAX_RUN_SECONDS` | `8` / `20` / `60` (per-run hard limits) |
 | `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
@@ -255,6 +257,11 @@ every environment, not only on a default Mac.
   2026-12-01), and `estimate_cost(..., on=clock.now().date())` picks the one in force,
   so announced changes need no code edit on the day. Only Anthropic and OpenAI SDKs
   are installed; Gemini is priced but not runnable yet.
+- **Prompt cache (D5):** `model_call` events carry `cache_read_tokens` and
+  `cache_write_tokens` (parts of `input_tokens`, as PydanticAI reports them). Anthropic
+  entries price reads at 0.1x input (0.05x Opus 5.5, 0.025x Fable 5.1) and 5-minute
+  writes at 1.25x; a model without known cache rates prices them as normal input, so a
+  cost is never under-reported. The Trace tab shows "N cached" on a model call.
 
 ### Provider contract: `providers/`
 - **What:** `ToolEnv` ([tool_env.py](../backend/src/errand_agent/providers/tool_env.py)),
@@ -990,6 +997,11 @@ user message
     local zone; a divider ("Today", "Yesterday", "Wed, 04 Nov") marks a new day. History
     uses the server's stored time (UTC with its offset); new messages take the
     browser's clock when sent or received. Tests pin `TZ=Asia/Kolkata`.
+    While a reply is on its way (BUG-10): typing dots until the first word (a tool's
+    progress line replaces them), then the text with a blinking caret until the final
+    arrives. `useSmoothText` reveals streamed text at a steady pace, because a short
+    reply's chunks land in one burst: each frame shows at least 2 more characters and
+    about 1/12 of what's still hidden, so it never lags the stream by more than ~0.5 s.
   - Trace (`src/components/trace/`, `src/hooks/useTrace.ts`): runs newest first, each
     collapsible under a header (trigger, outcome, calls, tokens, cost, duration;
     "running…" until it finishes); one line per event with its key fact

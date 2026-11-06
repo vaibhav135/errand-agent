@@ -21,6 +21,8 @@ export interface ChatItem {
   /** When it was said (ISO): the server's time for history, the browser's for new
    * messages; a reply still streaming has none yet. */
   at?: string
+  /** A reply still coming in: shows the typing dots, then the caret (BUG-10). */
+  streaming?: boolean
 }
 
 const now = () => new Date().toISOString()
@@ -76,7 +78,7 @@ export function useChat(sessionId: string | null, options: ChatOptions = {}) {
       setItems((all) => [
         ...all,
         { id: nextId++, role: 'user', text, at: now() },
-        { id: replyId, role: 'assistant', text: '' },
+        { id: replyId, role: 'assistant', text: '', streaming: true },
       ])
       setBusy(true)
       const abort = new AbortController()
@@ -91,12 +93,15 @@ export function useChat(sessionId: string | null, options: ChatOptions = {}) {
           onTrace: (event) => opts.current.onTrace?.(event),
           signal: abort.signal,
         })
-        update(replyId, { text: reply.message, reply, at: now() })
+        update(replyId, { text: reply.message, reply, at: now(), streaming: false })
         opts.current.onChanged?.()
       } catch (err) {
         const stopped = abort.signal.aborted
         setItems((all) => [
-          ...all.filter((item) => item.id !== replyId || item.text !== ''),
+          // Keep what streamed so far (no longer streaming); drop an empty placeholder.
+          ...all
+            .filter((item) => item.id !== replyId || item.text !== '')
+            .map((item) => (item.id === replyId ? { ...item, streaming: false } : item)),
           {
             id: nextId++,
             role: 'notice',

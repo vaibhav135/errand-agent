@@ -16,6 +16,7 @@ listed at the end.
 | 7 | The token estimate undercounts real tokens by ~45% | high | fixed |
 | 8 | The model doesn't know what code showed the user | medium | fixed |
 | 9 | The test suite runs out of file descriptors on a default Mac | medium | fixed |
+| 10 | The web chat shows nothing while the agent works on a reply | medium | fixed |
 
 ## 1. Rollback masked the real database error
 - **What broke:** When a write failed in a way that makes SQLite end the transaction
@@ -207,6 +208,31 @@ listed at the end.
   in one test is closed when it ends), plus the gate's `ulimit -n 256`.
 - **Commits:** repro `dda6be5` · fix `7a57433`
 
+## 10. The web chat shows nothing while the agent works on a reply
+- **Status:** fixed
+- **What broke:** after sending "hello", the chat showed only the user's message for
+  3.5–8.6 s, then the whole reply appeared at once. Nothing said the agent was working,
+  and it looked as if replies weren't streamed.
+- **Why:** the reply's placeholder has no text until the first chunk, and an empty
+  reply renders nothing; the only feedback is the tool progress line ("Searching
+  providers…"), so a turn with no tool call is silent. Streaming does work (the
+  browser received 12 separate `text` events), but almost all of the wait is before
+  the first word: a ~50-token reply is generated in about half a second, so its
+  chunks land in one burst. The CLI had the same gap and got a "working…" line (see
+  the table below); the web UI didn't carry it over.
+- **How found:** the user, in the browser; the run's trace showed one model call of
+  8.6 s with 52 output tokens, and DevTools showed the chunks arriving as SSE events.
+- **Fix:** each reply carries a `streaming` flag. Until its first word, the chat shows
+  typing dots (a tool's progress line replaces them); then the text with a blinking
+  caret until the final reply arrives. `useSmoothText` reveals the streamed text at a
+  steady pace, closing any gap within ~0.5 s, so a burst reads as typing. The wait
+  itself is the latency follow-up below (D5).
+- **Regression test:** `frontend/src/components/chat/Chat.test.tsx` ("shows that the
+  agent is working before the first word (BUG-10)", "swaps the typing dots for a
+  tool's progress line", "marks the reply as streaming until the final arrives,
+  revealing text steadily")
+- **Commits:** repro `57c7d25` · fix `60fcc60`
+
 ## Not bugs: follow-ups found alongside
 
 | Item | Kind | Plan |
@@ -217,6 +243,7 @@ listed at the end.
 | `list_memories` returns all 48 saved facts, 30 of them personal notes, on every call (~2.6k tokens; called on 3 of 4 turns in one chat) | token efficiency | done: booking-relevant facts plus a count of the 36 personal notes (listed only when asked), ~3,470 -> ~780 tokens; then TOON for the list-shaped results (D3: −31% per request, same accuracy) |
 | The suggestions hint says "/confirm N"; the user typed a literal N, and a bare `/confirm` just errors | UX | done: hints show a real number ("e.g. /confirm 40"); a bare `/confirm` lists the choices and decides nothing |
 | The model said "I've started the plumber booking", which can read as booked | prompt wording | done: the prompt says that before approval it's looking for or proposing, never a booking "started" |
+| A "hello" takes 3.5–8.6 s before the first word (one Sonnet 5.5 call, ~3.4k tokens in, 52 out). Sonnet 5.5 thinks adaptively by default at `high` effort, and nothing is prompt-cached, so the same ~3.6k tokens of tools and instructions are processed fresh every turn | latency | done (D5): measured with `make latency`. `low` effort halved errand turns (plumber search 13.4 -> 6.1 s to the first word, 6 -> 3 model calls); caching the stable prefix cut cost per turn 55–83%; "hello" stays ~1 s, and the 3.5–8.6 s seen were the API's own variance |
 
 <!-- Template
 ## N. <short title>

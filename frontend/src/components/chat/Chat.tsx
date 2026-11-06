@@ -7,6 +7,7 @@ import type { TraceEvent } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { type ChatItem, useChat } from '@/hooks/useChat'
+import { useSmoothText } from '@/hooks/useSmoothText'
 import { cn } from '@/lib/utils'
 
 import { ApprovalCard, BookingCard, SuggestionsCard } from './cards'
@@ -49,6 +50,8 @@ export function Chat({ sessionId, onTrace, onChanged }: ChatProps) {
             {startsNewDay(chat.items, i) && <DayDivider at={item.at!} />}
             <Message
               item={item}
+              // Nothing to read yet and no tool line: show that the agent is working.
+              typing={!!item.streaming && !item.text && !chat.progress}
               decided={chat.decided}
               onDecide={chat.decideCard}
               onChanged={onChanged}
@@ -114,17 +117,42 @@ function Time({ at }: { at?: string }) {
   )
 }
 
+function TypingDots() {
+  return (
+    <article className="flex flex-col items-start">
+      <div
+        role="status"
+        aria-label="Agent is typing"
+        className="flex gap-1 rounded-lg bg-muted px-3 py-3"
+      >
+        {[0, 150, 300].map((delay) => (
+          <span
+            key={delay}
+            className="size-1.5 animate-bounce rounded-full bg-muted-foreground"
+            style={{ animationDelay: `${delay}ms` }}
+          />
+        ))}
+      </div>
+    </article>
+  )
+}
+
 function Message({
   item,
+  typing,
   decided,
   onDecide,
   onChanged,
 }: {
   item: ChatItem
+  typing: boolean
   decided: Record<string, 'approved' | 'declined'>
   onDecide: ReturnType<typeof useChat>['decideCard']
   onChanged?: () => void
 }) {
+  // Called before any return: hooks must run in the same order on every render.
+  const text = useSmoothText(item.text, item.role === 'assistant' && !!item.streaming)
+  if (typing) return <TypingDots />
   if (item.role === 'notice') {
     return <p className="text-xs text-muted-foreground italic">{item.text}</p>
   }
@@ -150,12 +178,13 @@ function Message({
   // its cards follow it, not inside it, so they aren't boxes within a box.
   return (
     <article className="flex max-w-[85%] flex-col items-start text-sm">
-      {item.text && (
+      {text && (
         <div
           data-bubble="assistant"
+          data-streaming={item.streaming ? 'true' : 'false'} // the caret: index.css
           className="rounded-lg bg-muted px-3 py-2 [&_li]:my-0.5 [&_ol]:list-decimal [&_ol]:pl-5 [&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 [&_strong]:font-semibold [&_ul]:list-disc [&_ul]:pl-5"
         >
-          <Markdown>{item.text}</Markdown>
+          <Markdown>{text}</Markdown>
         </div>
       )}
       <div className="w-full">

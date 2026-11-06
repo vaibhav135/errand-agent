@@ -61,6 +61,29 @@ async def test_every_model_request_is_charged_and_traced(world: World) -> None:
     assert all("latency_ms" in c and c["cost_usd"] is None for c in calls)  # unpriced model
 
 
+async def test_prompt_cache_reads_and_writes_are_traced(world: World) -> None:
+    deps = deps_for(world, "hello")
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        usage = RequestUsage(
+            input_tokens=3400, output_tokens=5, cache_read_tokens=2900, cache_write_tokens=400
+        )
+        return ModelResponse(parts=[TextPart("Hi.")], usage=usage)
+
+    await run_agent(
+        build_orchestrator(),
+        deps,
+        model=FunctionModel(model),
+        prompt=deps.user_message,
+        instructions="Be helpful.",
+        history=[],
+    )
+
+    (call,) = events(world, "model_call")
+    assert call["input_tokens"] == 3400  # the whole input, cached parts included
+    assert (call["cache_read_tokens"], call["cache_write_tokens"]) == (2900, 400)
+
+
 async def test_turn_budget_stops_before_the_extra_request(world: World) -> None:
     deps = deps_for(world, "loop", budget=RunBudget(max_model_turns=1))
     model = Recorder([ToolCallPart("list_memories", {})], [TextPart("never sent")])
