@@ -39,15 +39,11 @@ How:  - Preconditions (book errand in `comparing`) are checked before calling th
          (parked for the reconciler). Success is never claimed until verified.
 """
 
-import contextlib
-import sqlite3
 from datetime import datetime, timedelta
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
-from errand_agent.core.clock import Clock
-from errand_agent.core.ids import IdGen
 from errand_agent.providers.errors import ProviderError, ProviderTimeout
 from errand_agent.providers.models import (
     Booked,
@@ -57,13 +53,10 @@ from errand_agent.providers.models import (
     HoldFailed,
     StatusBooked,
 )
-from errand_agent.providers.tool_env import ToolEnv
 from errand_agent.store.db import atomic
-from errand_agent.tracing.recorder import RunTrace
-from errand_agent.workflow.actions import ProviderActionStore
-from errand_agent.workflow.approvals import Approval, ApprovalDetails, ApprovalError, ApprovalStore
-from errand_agent.workflow.errands import ErrandStore, InvalidTransition
-from errand_agent.workflow.guarded_env import BudgetMeter
+from errand_agent.workflow.approvals import Approval, ApprovalDetails, ApprovalError
+from errand_agent.workflow.errands import InvalidTransition
+from errand_agent.workflow.flow import Flow
 from errand_agent.workflow.ranking import Option
 
 
@@ -95,30 +88,7 @@ class Execution(BaseModel):
     approval: Approval | None = None  # the fresh approval, when the user must re-confirm
 
 
-class BookingFlow:
-    def __init__(
-        self,
-        *,
-        conn: sqlite3.Connection,
-        env: ToolEnv,
-        errands: ErrandStore,
-        approvals: ApprovalStore,
-        actions: ProviderActionStore,
-        clock: Clock,
-        ids: IdGen,
-        run: RunTrace | None = None,
-        meter: BudgetMeter | None = None,
-    ) -> None:
-        self._conn = conn
-        self._env = env
-        self._errands = errands
-        self._approvals = approvals
-        self._actions = actions
-        self._clock = clock
-        self._ids = ids
-        self._run = run
-        self._meter = meter
-
+class BookingFlow(Flow):
     async def propose(self, errand_id: str, option: Option, slot: datetime) -> Proposal:
         errand = self._errands.get(errand_id)
         if errand.kind != "book" or errand.state != "comparing":
@@ -183,23 +153,16 @@ class BookingFlow:
             hold_id = refreshed
 
         # 2. Commit point.
-        if self._meter is not None:
-            self._meter.ensure_room("book")
-        key = self._ids.new("idem")
-        with atomic(self._conn):
-            self._approvals.consume(approval_id, details, run=self._run)
-            self._actions.create(
-                key,
-                errand_id=errand_id,
-                approval_id=approval_id,
-                operation="book",
-                hold_id=hold_id,
-            )
-            self._errands.transition(errand_id, "approved", run=self._run, reason=key)
+        key = self._commit_point(
+            errand_id=errand_id,
+            approval_id=approval_id,
+            details=details,
+            operation="book",
+            hold_id=hold_id,
+        )
 
         # 3. Finish what was started.
-        committed = self._meter.committed() if self._meter else contextlib.nullcontext()
-        with committed:
+        with self._finishing():
             return await self._book_until_known(errand_id, key, hold_id, details)
 
     async def _refresh_hold(self, errand_id: str, details: ApprovalDetails) -> str | Execution:
