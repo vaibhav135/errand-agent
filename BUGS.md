@@ -13,6 +13,8 @@ listed at the end.
 | 4 | Slash commands leak to the model | low | fixed |
 | 5 | The agent's own tool calls aren't traced | medium | fixed |
 | 6 | An inference can contradict an explicit preference | medium | fixed |
+| 7 | The token estimate undercounts real tokens by ~45% | high | open |
+| 8 | The model doesn't know what code showed the user | medium | open |
 
 ## 1. Rollback masked the real database error
 - **What broke:** When a write failed in a way that makes SQLite end the transaction
@@ -139,6 +141,37 @@ listed at the end.
   `::test_the_seeded_user_is_a_fixed_point_of_inference`
 - **Commits:** repro `32174f3` · fix `e7997da`
 
+## 7. The token estimate undercounts real tokens by ~45%
+- **Status:** open
+- **What broke:** in the second live chat, every `model_call` showed our estimate well
+  below the provider's real input count: 2,582 vs 3,763 (1.46×), 4,404 vs 6,264
+  (1.42×), 4,843 vs **7,474** (1.54×). The estimate is meant to be *pessimistic*; it
+  isn't, so the 6,000-token cap let a 7,474-token request through. BUG-3's fix holds
+  in our units, not in the provider's.
+- **Why (hypotheses, to confirm in the repro):** (a) JSON tool schemas tokenize more
+  densely per character than prose (chars/3.5 assumes prose); (b) the provider adds a
+  hidden tool-use system prompt when tools are offered (Anthropic documents a few
+  hundred tokens); (c) per-message formatting overhead we don't count.
+- **How found:** the calibration field added by BUG-3 (`estimated_input_tokens` next
+  to `input_tokens`), on the user's second live chat.
+- **Fix:** -
+- **Regression test:** -
+- **Commits:** -
+
+## 8. The model doesn't know what code showed the user
+- **Status:** open
+- **What broke:** after code drew the two suggestions in a box under its reply, the next
+  turn the model told the user "I never actually displayed them, even though I said I
+  had", which was false, and offered to show them again.
+- **Why:** things code renders (the suggestions box) aren't part of what the model sees
+  next turn: only the text of its own reply is saved to the conversation, and tool
+  results don't carry across runs. Approval cards don't have this gap because STATE
+  reports "Pending approval: …"; suggestions have no such line.
+- **How found:** the user's second live chat (trace `run_2513f045…`).
+- **Fix:** -
+- **Regression test:** -
+- **Commits:** -
+
 ## Not bugs: follow-ups found alongside
 
 | Item | Kind | Plan |
@@ -146,6 +179,9 @@ listed at the end.
 | The seeded "long conversation" fits in ~3k tokens, so no message is ever dropped from context: context management is never actually exercised | test-data gap | addressed by BUG-3: old sessions are now provably out of scope (`messages_out_of_scope`), and trimming within a session is tested with 500 messages; a long-session eval follows in Phase 8 |
 | PydanticAI's startup banner prints in the chat | UX | done: the chat sets `PYDANTIC_AI_NO_BANNER=1` unless already set |
 | No "working…" indicator during a 5–15 s turn, so the user types ahead; those keystrokes echo into the output and are sent as the next messages | UX | done: a "working…" line prints before each run |
+| `list_memories` returns all 48 saved facts, 30 of them personal notes, on every call (~2.6k tokens; called on 3 of 4 turns in one chat) | token efficiency | return the booking-relevant facts plus "and N personal notes"; consider a compact format (TOON) for list-shaped tool results |
+| The suggestions hint says "/confirm N"; the user typed a literal N, and a bare `/confirm` just errors | UX | show the real numbers ("/confirm 40 · /reject 44"); a bare `/confirm` lists the choices |
+| The model said "I've started the plumber booking", which can read as booked | prompt wording | say "started looking for a plumber"; nothing is a booking until confirmed |
 
 <!-- Template
 ## N. <short title>
