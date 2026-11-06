@@ -7,10 +7,11 @@ import pytest
 from pydantic import SecretStr
 
 from errand_agent.api.app import Services, build_handler, build_services
-from errand_agent.api.chat import chat_loop, main, render_card
+from errand_agent.api.chat import chat_loop, main, numbered, render_card
 from errand_agent.core.clock import FakeClock
 from errand_agent.core.config import Settings
 from errand_agent.core.ids import SequentialIdGen
+from errand_agent.memory.store import MemoryStore
 from errand_agent.workflow.approvals import Approval, ApprovalDetails
 from tests.unit.agent_script import ScriptedModel, call, say
 
@@ -145,6 +146,33 @@ def test_the_pydantic_ai_banner_is_off(
     main(settings=keyed, clock=app_clock, read=terminal.read, write=terminal.write)
 
     assert os.environ["PYDANTIC_AI_NO_BANNER"] == "1"
+
+
+async def test_memories_shows_saved_facts_and_suggestions(services: Services) -> None:
+    terminal = Terminal("/memories")
+
+    await chat(services, terminal, ScriptedModel())  # handled in code: no model needed
+
+    out = terminal.text
+    assert "Saved:" in out and "Earliest start: 10:00 (you told me)" in out
+    assert "Suggestions from your bookings" in out
+    assert "Usual electrician: Sparks Electricals (2 completed bookings with" in out
+
+
+async def test_confirm_and_reject_are_decided_in_code(services: Services) -> None:
+    memories = MemoryStore(services.agent_db, clock=services.clock, ids=services.ids)
+    number = {m.scope: n for n, m in numbered(memories) if m.status == "pending_confirmation"}
+    terminal = Terminal(
+        f"/confirm {number['electrician']}", f"/reject {number['ac_servicing']}", "/confirm 999"
+    )
+
+    await chat(services, terminal, ScriptedModel())
+
+    status = {m.scope: m.status for m in memories.all_for_user("user_1") if m.source == "inferred"}
+    assert status["electrician"] == "active"
+    assert status["ac_servicing"] == "rejected"
+    assert "Saved: Usual electrician: Sparks Electricals." in terminal.text
+    assert "No suggestion 999; see /memories." in terminal.text
 
 
 async def test_unknown_commands_never_reach_the_model(services: Services) -> None:

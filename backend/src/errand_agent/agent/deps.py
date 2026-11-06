@@ -11,8 +11,9 @@ How:  - `env` is the GuardedToolEnv for this run: every provider call is traced 
         budgeted, and only the workflow flows built here can cause side effects.
       - `user_message` is the user's current message: the provenance that `remember`
         and `update_profile` are checked against.
-      - Tools record approval cards they produced in `cards`; the message handler
-        shows those (code-rendered) alongside the model's reply.
+      - Tools record approval cards they produced in `cards`, and suggestions the user
+        should review in `suggestions`; the message handler returns both for code to
+        render alongside the model's reply (the model never sees a suggestion's value).
       - `context_limit` / `fixed_tokens` let the context guard (agent/budget.py) cap
         every request of the run; it records each request's size in
         `request_estimate` for the trace.
@@ -26,7 +27,7 @@ from pydantic_ai.models import Model
 from errand_agent.core.clock import Clock
 from errand_agent.core.ids import IdGen
 from errand_agent.memory.profile import ProfileStore
-from errand_agent.memory.store import MemoryStore
+from errand_agent.memory.store import Memory, MemoryStore
 from errand_agent.providers.tool_env import ToolEnv
 from errand_agent.tracing.recorder import RunTrace
 from errand_agent.workflow.actions import ProviderActionStore
@@ -56,6 +57,7 @@ class AgentDeps:
     review_model: Model | None = None  # the quarantined review reader's model
     errand_id: str | None = None
     cards: list[Approval] = field(default_factory=list)
+    suggestions: list[Memory] = field(default_factory=list)  # for code to show the user
     # Context budget for every request in this run (None = unbudgeted), the part every
     # request carries (tool definitions + instructions), and the last request's size.
     context_limit: int | None = None

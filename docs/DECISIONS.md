@@ -64,9 +64,8 @@ in the conversation, so old observations are masked between turns.
   real cost win, noted as future work for the design note.
 
 **Related decision: pending suggestions stay out of the model's context.** The
-assignment says unconfirmed inferred facts "must never be included". `list_memories`
-will report only that a suggestion awaits the user's answer (its key and scope, not its
-value); the user confirms or rejects it through code, the same pattern as approvals.
+assignment says unconfirmed inferred facts "must never be included"; how suggestions
+reach the user instead is decided in D2.
 
 **Sources:**
 [Anthropic: Effective context engineering for AI agents](https://www.anthropic.com/engineering/effective-context-engineering-for-ai-agents) ·
@@ -79,3 +78,46 @@ value); the user confirms or rejects it through code, the same pattern as approv
 [Lost in the Middle (arXiv 2307.03172)](https://arxiv.org/abs/2307.03172v3) ·
 [MemGPT (arXiv 2310.08560)](https://arxiv.org/pdf/2310.08560) ·
 [Mem0 (arXiv 2504.19413)](https://arxiv.org/abs/2504.19413v1)
+
+## D2. Suggestions reach the user through code, never through the model (2026-11-06)
+
+**Status:** implemented by the BUG-5 fix (ARCHITECTURE.md, "Agent tools" and "Chat
+CLI"); the web UI's memory panel adds Confirm / Reject buttons in Phase 6.
+
+**Trigger:** BUG-5. In the first live chat the model listed the two pending suggestions
+("Sparks… CoolBreeze") by value: the context builder excluded them, but the
+`list_memories` tool returned them, and tool results are part of what the model reads.
+
+**The requirements in tension** (assignment): users must be able to *inspect* their
+memory, which includes suggestions awaiting an answer; and "unconfirmed inferred facts
+must never be included" in the model's context, "and prove it in tests". So a
+suggestion must reach the user without passing through the model: the same shape as
+approvals, where code shows the details and the model never decides.
+
+**Who does what:** *creating* a suggestion needs no LLM; it is counting over the
+provider's booking history (`memory/inference.py`, e.g. 2+ completed bookings with
+one provider). The LLM is needed for language: it proposes explicit preferences from
+what the user said (`remember`, verified against the user's words), and it drives the
+conversation.
+
+**Decision (option A, with a conversational refinement):**
+1. `list_memories` returns active facts only, plus how many suggestions await review.
+2. `confirm_suggestion` / `reject_suggestion` are removed from the model's tools.
+3. A `show_suggestions` tool lets the model *ask code* to show them: code renders the
+   suggestions (values, reasons) next to the reply, like an approval card; the model
+   only learns how many were shown.
+4. The user confirms or rejects in code: `/memories`, `/confirm N`, `/reject N` in the
+   chat; Confirm / Reject buttons in the web UI's memory panel.
+5. Once confirmed, a suggestion is an ordinary active preference and reaches the model
+   when relevant, as any other.
+
+**Rejected:**
+- *B. The model sees "a suggestion about your electrician", code shows the value, the
+  user replies yes/no:* "yes" would then mean two things whenever an approval card is
+  also pending, on the most safety-critical path (typed yes → booking), and the model
+  still sees part of the unconfirmed fact.
+- *C. Keep the values, labelled "unconfirmed":* fails a literal reading of the
+  requirement, and our own logs couldn't prove otherwise.
+- *An LLM extracting preferences from vague conversation* (Mem0-style): could fit as a
+  future way to *create* pending suggestions (the model may propose; it must never be
+  handed unconfirmed facts back), but isn't needed for the requirements.
