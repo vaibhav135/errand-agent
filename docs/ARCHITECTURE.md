@@ -1022,6 +1022,15 @@ user message
   shows the reply without it) (BUG-8). Approval cards need no note: STATE reports any
   pending approval.
 
+  **Claim check (BUG-12, `agent/claims.py`):** a model turn's reply is the model's own
+  text, so before it is saved it is checked against verified state. If it claims the
+  open request is done ("booked", "cancelled", "moved", with no negation or hedge such
+  as "isn't … until", "it'll be" just before), a code-written note is added after it:
+  "Note from the app: nothing is booked yet. The … card … is still waiting for your
+  approval." A model turn never completes a request (only an approval does), so such a
+  claim is always unverified. With nothing open, a mention of a past booking is left
+  alone. Traced as `claim_corrected`.
+
   `pick(session_id=, provider_id=, slot=)` is the slots card: a click holds exactly that
   provider and slot in code (`BookingFlow.propose`, no model, `trigger="slot_pick"`) and
   returns its approval card; picking never books. The slot must be one the errand's
