@@ -37,16 +37,22 @@ from errand_agent.agent.handler import MessageHandler, Reply
 from errand_agent.memory.conversation import ConversationStore
 from errand_agent.mocks.control import MockControl
 from errand_agent.mocks.scenario import Scenario
-from errand_agent.providers.tool_env import ToolEnv
 from errand_agent.store.db import connect
 from errand_agent.tracing.recorder import Tracer
+from errand_agent.workflow.approvals import Approval
 from errand_agent.workflow.guarded_env import RunBudget
 from errand_agent.workflow.monitor import ProviderMonitor, ProviderNotice
 from errand_agent.workflow.reconciler import Reconciler
-from tests.unit.agent_script import ScriptedModel
+from tests.unit.agent_script import ScriptedModel, Step, call, say
+from tests.unit.test_agent_tools import ASK, FULL, first_slot
 from tests.unit.workflow_world import World
 
 SESSION, USER = "sess_1", "user_1"  # the World's session and user
+
+# The provider as the agent sees it: a ToolEnv, or a ScriptedEnv (tests/unit), a proxy that
+# forwards to one and fails or crashes on cue. Typed Any because the proxy isn't declared
+# as a ToolEnv (it forwards via __getattr__), as in the unit tests.
+Env = Any
 
 # Runs that answer the user, or tell them something: each must leave a saved reply.
 ANSWERED = {"user_message", "approval_click", "slot_pick", "provider_replacement"}
@@ -59,7 +65,7 @@ class Sim:
         model: ScriptedModel | None = None,
         *,
         scenario: Scenario | None = None,
-        env: ToolEnv | None = None,
+        env: Env | None = None,
         budget: RunBudget | None = None,
     ) -> None:
         # Bookings succeed unless the scenario scripts otherwise: evals are deterministic.
@@ -75,7 +81,7 @@ class Sim:
         self.replacements: list[Reply] = []
         self.crashed: set[str] = set()  # runs the process died in: no reply to save
 
-    def _handler(self, env: ToolEnv | None = None) -> MessageHandler:
+    def _handler(self, env: Env | None = None) -> MessageHandler:
         w = self.world
         return MessageHandler(
             conn=w.conn,
@@ -132,11 +138,21 @@ class Sim:
         self.replacements = replies
         return notices
 
+    def use_env(self, env: Env) -> None:
+        """Talk to the provider through `env` from now on (e.g. a ScriptedEnv that
+        crashes or fails on cue), same databases."""
+        self.handler = self._handler(env)
+
+    def reopen_mock(self, scenario: Scenario) -> None:
+        """The provider world with a different scenario (e.g. slot conflicts)."""
+        self.world.mock = self.world.open_mock(scenario)
+        self.handler = self._handler()
+
     def died_mid_run(self) -> None:
         """The process was killed during the latest run (a simulated crash)."""
         self.crashed.add(self.events("run_started")[-1]["run_id"])
 
-    async def restart(self, env: ToolEnv | None = None) -> None:
+    async def restart(self, env: Env | None = None) -> None:
         """A new process on the same databases: a fresh handler, then the startup
         reconcile pass that settles whatever the last one left unknown."""
         self.handler = self._handler(env)
@@ -166,6 +182,10 @@ class Sim:
 
     def events(self, kind: str) -> list[dict[str, Any]]:
         return [e.to_dict() for e in self.world.events if e.type == kind]
+
+    def provider_calls(self, tool: str) -> list[dict[str, Any]]:
+        """The provider calls the agent made with `tool`, from the trace (status, result)."""
+        return [e for e in self.events("tool_call") if e["tool"] == tool]
 
     def said(self) -> list[tuple[str, str]]:
         return [(m.role, m.content) for m in self.conversation.for_session(SESSION)]
@@ -280,6 +300,28 @@ class Sim:
             if t["model_calls"] > b.max_model_turns or t["tool_calls"] > b.max_tool_calls:
                 out.append(f"run {e['run_id']} went past its limits: {t}")
         return out
+
+
+# --- common scripts ------------------------------------------------------------------------
+
+
+def proposes(*more: Step) -> ScriptedModel:
+    """A model that takes the full request, searches, and proposes the first slot of the
+    first option; then whatever `more` scripts for later turns."""
+    return ScriptedModel(
+        [call("update_requirements", **FULL)],
+        [call("search_and_compare")],
+        lambda m: [call("propose_booking", option_number=1, slot=first_slot(m))],
+        [say("I've held it. Approve the card to book.")],
+        *more,
+    )
+
+
+async def to_card(sim: Sim) -> Approval:
+    """The user asks; the scripted model (see `proposes`) gets to an approval card."""
+    reply = await sim.say(ASK)
+    assert reply.outcome.kind == "needs_approval" and reply.outcome.approval is not None
+    return reply.outcome.approval
 
 
 def _at(text: str) -> datetime:
