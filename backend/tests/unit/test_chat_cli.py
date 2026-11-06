@@ -126,6 +126,19 @@ async def test_ctrl_d_ends_the_chat_quietly(services: Services) -> None:
     await chat(services, terminal, ScriptedModel())  # returns instead of raising
 
 
+@pytest.mark.xfail(strict=True, reason="BUG-4: slash commands are sent to the model")
+async def test_unknown_commands_never_reach_the_model(services: Services) -> None:
+    terminal = Terminal("/trace", "/quit")
+
+    await chat(services, terminal, ScriptedModel())  # no script: any model call fails
+
+    assert "Unknown command /trace" in terminal.text
+    saved = services.agent_db.execute(
+        "SELECT count(*) FROM messages WHERE content = '/trace'"
+    ).fetchone()[0]
+    assert saved == 0  # not part of the conversation either
+
+
 # --- startup ---------------------------------------------------------------------------------
 
 
