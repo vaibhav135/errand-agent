@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from errand_agent.memory.tokens import estimate_json_tokens, estimate_tokens
+from errand_agent.memory.tokens import estimate_json_tokens, estimate_tokens, estimate_toon_tokens
 
 CALIBRATION = json.loads(
     (Path(__file__).resolve().parents[1] / "data" / "token_calibration.json").read_text()
@@ -21,6 +21,8 @@ CALIBRATION = json.loads(
 def estimate(sample: dict[str, Any]) -> int:
     if sample["name"] == "tool_schemas" or sample["kind"] == "prose":
         return estimate_tokens(sample["text"])  # schemas read like text, not dense data
+    if sample["name"] == "bookings_toon":
+        return estimate_toon_tokens(sample["text"])  # how the guard counts text results
     return estimate_json_tokens(sample["text"])
 
 

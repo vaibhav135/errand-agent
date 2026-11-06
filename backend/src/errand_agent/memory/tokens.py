@@ -26,6 +26,7 @@ import math
 
 TEXT_CHARS_PER_TOKEN = 2.4
 JSON_CHARS_PER_TOKEN = 1.9
+TOON_CHARS_PER_TOKEN = 1.6  # TOON tool results measured 1.75: denser than JSON
 TOOL_USE_OVERHEAD_TOKENS = 350
 
 
@@ -37,3 +38,8 @@ def estimate_tokens(text: str) -> int:
 def estimate_json_tokens(text: str) -> int:
     """JSON data: tool call arguments and tool results."""
     return math.ceil(len(text) / JSON_CHARS_PER_TOKEN)
+
+
+def estimate_toon_tokens(text: str) -> int:
+    """Tool results written as text (TOON tables): the densest data we send."""
+    return math.ceil(len(text) / TOON_CHARS_PER_TOKEN)

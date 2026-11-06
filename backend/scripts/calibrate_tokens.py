@@ -29,6 +29,7 @@ from anthropic import Anthropic
 
 from errand_agent.agent.orchestrator import orchestrator_tools
 from errand_agent.agent.prompts import SYSTEM_PROMPT
+from errand_agent.agent.toon import to_toon
 from errand_agent.core.clock import SystemClock
 from errand_agent.core.config import load_settings
 from errand_agent.core.ids import RandomIdGen
@@ -96,6 +97,12 @@ def main() -> None:
             "kind": "json",
             "text": bookings,
             "real_tokens": marginal(bookings),
+        },
+        {  # the same bookings as TOON (experiment/toon): dense data, so counted as JSON
+            "name": "bookings_toon",
+            "kind": "json",
+            "text": (toon := to_toon("bookings", json.loads(bookings))),
+            "real_tokens": marginal(toon),
         },
     ]
     result = {
