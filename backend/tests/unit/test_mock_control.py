@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -8,9 +8,12 @@ from errand_agent.core.ids import SequentialIdGen
 from errand_agent.mocks.control import MockControl
 from errand_agent.mocks.scenario import Scenario
 from errand_agent.mocks.world import MockWorld
+from errand_agent.providers.errors import ProviderTimeout
+from errand_agent.providers.models import DateRange, Held, SearchOk
 from errand_agent.store.db import connect
 
 NOW = datetime(2026, 11, 5, 3, 30, tzinfo=UTC)
+WEEK = DateRange(start=date(2026, 11, 5), end=date(2026, 11, 11))
 COOLBREEZE_BOOKING = "bk_hist_coolbreeze"  # seeded: upcoming, confirmed
 SPARKS_BOOKING = "bk_hist_sparks"  # seeded: completed
 
@@ -78,3 +81,55 @@ def test_misuse_is_loud(control: MockControl, booking_id: str) -> None:
 def test_control_is_not_part_of_the_tool_env(world: MockWorld) -> None:
     # The agent only ever receives a ToolEnv; the control plane must not hang off it.
     assert not hasattr(world, "cancel_by_provider")
+    assert not hasattr(world, "script_next_book")
+
+
+# --- live demo controls (D4): failures on demand, without restarting ------------------------
+
+
+async def held(world: MockWorld) -> Held:
+    search = await world.search_providers("plumber", "Indiranagar", WEEK)
+    assert isinstance(search, SearchOk)
+    first = search.providers[0]
+    result = await world.hold_slot(first.provider_id, first.available_slots[0])
+    assert isinstance(result, Held)
+    return result
+
+
+async def test_next_booking_can_time_out_after_succeeding(
+    world: MockWorld, control: MockControl
+) -> None:
+    control.script_next_book("timeout_booked")
+    hold = (await held(world)).hold
+
+    with pytest.raises(ProviderTimeout):
+        await world.book(hold.hold_id, "idem_demo")
+
+    status = await world.get_booking_status(idempotency_key="idem_demo")
+    assert status.status == "booked"  # it went through: only the answer was lost
+
+
+async def test_next_booking_can_lose_the_slot(world: MockWorld, control: MockControl) -> None:
+    control.script_next_book("slot_taken")
+    hold = (await held(world)).hold
+
+    result = await world.book(hold.hold_id, "idem_demo")
+
+    assert result.status == "slot_taken"
+
+
+async def test_a_price_can_change_at_hold_time_and_reset(
+    world: MockWorld, control: MockControl
+) -> None:
+    search = await world.search_providers("plumber", "Indiranagar", WEEK)
+    assert isinstance(search, SearchOk)
+    first = search.providers[0]
+
+    control.set_price_drift(first.provider_id, 0.2)
+    drifted = await world.hold_slot(first.provider_id, first.available_slots[0])
+    control.reset()
+    normal = await world.hold_slot(first.provider_id, first.available_slots[1])
+
+    assert isinstance(drifted, Held) and isinstance(normal, Held)
+    assert drifted.hold.quoted_price_inr == round(first.price_inr * 1.2)
+    assert normal.hold.quoted_price_inr == first.price_inr

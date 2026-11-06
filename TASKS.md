@@ -71,7 +71,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Approval decision endpoint: the button path (`handler.decide`), same as typed yes/no
 - [x] Memory endpoints (inspect, confirm / reject suggestions, correct, forget) + bookings
 - [x] `GET /events` push stream + past runs for the trace pane
-- [ ] Demo endpoints (`ERRAND_DEMO_MODE`): timeout after success, slot taken, provider
+- [x] Demo endpoints (`ERRAND_DEMO_MODE`): timeout after success, slot taken, provider
       cancels, price change at hold
 - [ ] Frontend: Vitest, API client, layout shell (chat + tabbed side panel)
 - [ ] Chat: streamed replies, progress lines, Stop; ApprovalCard / SuggestionsCard /

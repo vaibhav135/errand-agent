@@ -88,6 +88,7 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 | `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
 | `ERRAND_CONTEXT_TOKEN_BUDGET` / `ERRAND_MEMORY_TOKEN_BUDGET` | `7500` / `600` (estimated tokens per model request, calibrated never to undercount; 7,500 derived in DECISIONS D3) |
 | `ERRAND_SEED_DEMO_USER` | `true` (load the generated demo user into an empty DB) |
+| `ERRAND_DEMO_MODE` | `false` (expose `/api/demo/*` and the UI's Demo tab: trigger failures live) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | unset; standard names, no prefix |
 
 Local values go in `backend/.env` (gitignored), copied from the committed
@@ -181,6 +182,19 @@ every environment, not only on a default Mac.
   quiet, which also notices a client that left (then it unsubscribes and ends). Past
   runs are read from the JSONL trace files (newest 50), in a worker thread so a long
   history can't stall the loop; the reader touches files only, never SQLite.
+
+### Demo API: `api/demo_routes.py`, `mocks/control.py`
+- **What:** `GET /api/demo` -> `{enabled}`; with `ERRAND_DEMO_MODE=true`, `POST
+  /api/demo/next-book` `{outcome}`, `/provider-cancels` `{booking_id}`, `/price-drift`
+  `{provider_id, fraction}`, `/reset`.
+- **Why:** the demo is "a strong plus if one failure is handled live"; these make the
+  provider misbehave on cue (timeout after success, slot taken, a price that changes
+  at hold, a provider cancelling), with no restart.
+- **How:** thin wrappers over `MockControl`, the mock's control plane, which the agent
+  never sees. `script_next_book` puts one scripted outcome on the scenario and resets
+  its cursor (after it, outcomes are random again); `set_price_drift` changes what
+  holds quote; `reset` restores the scenario the world started with. Off by default:
+  action routes are 404 and the UI hides the tab.
 
 ### Memory and bookings API: `api/memory_routes.py`
 - **What:** `GET /api/memories` (saved facts and suggestions, apart), `POST

@@ -40,6 +40,7 @@ from pydantic_ai.models import Model
 from errand_agent.agent import models as agent_models
 from errand_agent.agent.handler import MessageHandler
 from errand_agent.api.chat_routes import router as chat_router
+from errand_agent.api.demo_routes import router as demo_router
 from errand_agent.api.events import EventHub
 from errand_agent.api.memory_routes import router as memory_router
 from errand_agent.api.trace_routes import router as trace_router
@@ -47,6 +48,7 @@ from errand_agent.core.clock import Clock, SystemClock
 from errand_agent.core.config import Settings, load_settings
 from errand_agent.core.ids import IdGen, RandomIdGen
 from errand_agent.memory.seed import seed_demo_user
+from errand_agent.mocks.control import MockControl
 from errand_agent.mocks.scenario import Scenario
 from errand_agent.mocks.world import MockWorld
 from errand_agent.store.db import connect
@@ -73,6 +75,7 @@ class Services:
     actions: ProviderActionStore
     reconciler: Reconciler
     hub: EventHub
+    control: MockControl  # the mock's control plane: demo routes only, never the agent
     model: Model | None = None  # a test's scripted model; None = from Settings
     _handler: MessageHandler | None = None
     _locks: dict[str, asyncio.Lock] = field(default_factory=dict)
@@ -129,6 +132,7 @@ def build_services(settings: Settings, clock: Clock, ids: IdGen) -> Services:
         actions=actions,
         reconciler=reconciler,
         hub=hub,
+        control=MockControl(world),
     )
 
 
@@ -198,5 +202,6 @@ def create_app(
     api.include_router(chat_router)
     api.include_router(memory_router)
     api.include_router(trace_router)
+    api.include_router(demo_router)
     app.include_router(api)
     return app
