@@ -1,5 +1,5 @@
 # Dev tasks. Targets are written for GNU Make 3.81 (the macOS default).
-.PHONY: help install dev dev-backend dev-frontend test lint format build
+.PHONY: help install dev dev-backend dev-frontend test lint format seed-data build
 
 BACKEND := backend
 FRONTEND := frontend
@@ -30,6 +30,9 @@ lint: ## Lint + typecheck backend and frontend
 
 format: ## Auto-format backend
 	cd $(BACKEND) && uv run ruff format . && uv run ruff check --fix .
+
+seed-data: ## Regenerate the committed demo-user seed (memories + conversation)
+	cd $(BACKEND) && uv run python -m errand_agent.memory.seedgen
 
 build: ## Production build of the frontend
 	cd $(FRONTEND) && bun run build

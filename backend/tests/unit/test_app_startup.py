@@ -137,3 +137,13 @@ async def test_startup_finishes_a_booking_left_behind_by_a_crash(
         )
         == 1
     )
+
+
+def test_startup_seeds_the_demo_user_once(app_settings: Settings, app_clock: FakeClock) -> None:
+    for _ in range(2):
+        with TestClient(create_app(app_settings, clock=app_clock)):
+            pass
+
+    agent = connect(app_settings.agent_db_path)
+    assert agent.execute("SELECT count(*) FROM memories").fetchone()[0] == 55
+    assert agent.execute("SELECT count(*) FROM messages").fetchone()[0] == 200

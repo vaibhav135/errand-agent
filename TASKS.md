@@ -50,7 +50,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] History scrubbing: forgotten quotes and saved PII leave stored messages
 - [x] `ContextBuilder` + per-turn `context_sent` log; tests prove forgotten / pending / PII never sent
 - [x] Inference rules from booking history (pending only)
-- [ ] Seed ≥50 memories + long prior conversation (deterministic generator)
+- [x] Seed ≥50 memories + long prior conversation (deterministic generator, `make seed-data`)
 
 ## Phase 5 — Agent
 - [ ] Per-run reconcile check (`reconcile_once(session_id=...)`) at the start of each user run

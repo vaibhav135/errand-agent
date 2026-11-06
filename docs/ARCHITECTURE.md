@@ -82,6 +82,7 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 | `ERRAND_MAX_MODEL_TURNS` / `ERRAND_MAX_TOOL_CALLS` / `ERRAND_MAX_RUN_SECONDS` | `8` / `20` / `60` (per-run hard limits) |
 | `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
 | `ERRAND_CONTEXT_TOKEN_BUDGET` / `ERRAND_MEMORY_TOKEN_BUDGET` | `6000` / `600` (estimated tokens per model turn) |
+| `ERRAND_SEED_DEMO_USER` | `true` (load the generated demo user into an empty DB) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | unset; standard names, no prefix |
 
 Local values go in `backend/.env` (gitignored), copied from the committed
@@ -539,6 +540,20 @@ User information comes in three kinds, kept in three places:
   memory text (no message bodies; they're in `messages`). Tests prove forgotten and
   pending values, and the user's name, phone, email and street, appear nowhere in the
   packet.
+
+### Demo-user seed: `memory/seedgen.py`, `memory/seed.py`
+- **What:** a deterministic generator (`make seed-data`) writes the committed
+  `memory/data/demo_user.json`: a fictional profile, **55 memories** and **200 messages**
+  over 10 past sessions. `seed_demo_user()` loads it into an empty `agent.db` at startup
+  (`ERRAND_SEED_DEMO_USER`, default on).
+- **Why:** the assignment's "≥50 stored memories and a long prior conversation", so the
+  demo and evals exercise context management on a realistic, lived-in user.
+- **How:** hand-written key facts cover every state (explicit active, superseded chains,
+  forgotten tombstones, pending / rejected / confirmed inferences); ~30 irrelevant notes
+  come from templates with a fixed seed. The seed obeys our own rules (each explicit
+  quote appears in a user message, forgotten facts only as `[forgotten]`, PII only as
+  `[phone saved]` etc.) and every value passes the store's validation. A test fails if
+  the committed file differs from the generator's output.
 
 ### Run outcomes: `workflow/outcomes.py`
 - **What:** `RunOutcome` (kind, user-facing message, optional booking / approval card),

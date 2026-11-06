@@ -2,8 +2,8 @@
 
 What: `create_app(settings, clock=, ids=)` builds the FastAPI app; on startup its
       lifespan builds a `Services` container (settings, clock, ids, agent.db
-      connection, mock world, tracer) on `app.state.services` and closes it on
-      shutdown.
+      connection, mock world, tracer, workflow stores, reconciler) on
+      `app.state.services` and closes it on shutdown.
 
 Why:  One place where concrete implementations are chosen and wired together.
       Every other layer receives what it needs (a Clock, a ToolEnv, a Tracer)
@@ -11,6 +11,10 @@ Why:  One place where concrete implementations are chosen and wired together.
 
 How:  - Startup opens and migrates agent.db, and opens the mock world (migrates and
         seeds mock_world.db once). Restarts reuse the same files.
+      - With `seed_demo_user` on, an empty agent.db gets the generated demo user.
+      - Startup then runs one reconcile pass (restart recovery: settle side effects
+        the previous process left unknown) and starts the background reconciler
+        loop unless `reconcile_interval_seconds` is 0; shutdown cancels it.
       - Defaults (Settings from env/.env, SystemClock, RandomIdGen) are used by the
         dev server (`uvicorn --factory`); tests pass their own.
       - All HTTP routes live under /api, so the built frontend can be served at /.
@@ -28,6 +32,7 @@ from fastapi import APIRouter, FastAPI
 from errand_agent.core.clock import Clock, SystemClock
 from errand_agent.core.config import Settings, load_settings
 from errand_agent.core.ids import IdGen, RandomIdGen
+from errand_agent.memory.seed import seed_demo_user
 from errand_agent.mocks.scenario import Scenario
 from errand_agent.mocks.world import MockWorld
 from errand_agent.store.db import connect
@@ -60,6 +65,8 @@ class Services:
 def build_services(settings: Settings, clock: Clock, ids: IdGen) -> Services:
     agent_db = connect(settings.agent_db_path)
     migrate(agent_db, migrations_for("agent"), clock)
+    if settings.seed_demo_user:
+        seed_demo_user(agent_db, clock)
     world = MockWorld.open(
         settings.mock_db_path, clock=clock, ids=ids, scenario=Scenario(seed=settings.mock_seed)
     )
