@@ -15,7 +15,7 @@ listed at the end.
 | 6 | An inference can contradict an explicit preference | medium | fixed |
 | 7 | The token estimate undercounts real tokens by ~45% | high | fixed |
 | 8 | The model doesn't know what code showed the user | medium | fixed |
-| 9 | The test suite runs out of file descriptors on a default Mac | medium | open |
+| 9 | The test suite runs out of file descriptors on a default Mac | medium | fixed |
 
 ## 1. Rollback masked the real database error
 - **What broke:** When a write failed in a way that makes SQLite end the transaction
@@ -184,7 +184,7 @@ listed at the end.
 - **Commits:** repro `9c7b7d3` · fix `1a63b8c`
 
 ## 9. The test suite runs out of file descriptors on a default Mac
-- **Status:** open
+- **Status:** fixed
 - **What broke:** `make test` failed for the user with 14 failures and 17 errors, all
   `OSError: [Errno 24] Too many open files` or SQLite's "unable to open database
   file". It passed on the machine running the commit gate.
@@ -197,10 +197,15 @@ listed at the end.
   1,048,576, which hid it. Under `ulimit -n 256` the gate reproduces the failure.
   The app itself closes its connections (`Services.close()`).
 - **How found:** the user ran `make test` in a default terminal.
-- **Workaround until fixed:** `ulimit -n 4096` in that terminal.
-- **Fix:** -
-- **Regression test:** -
-- **Commits:** -
+- **Workaround until fixed:** `ulimit -n 4096` in that terminal (no longer needed).
+- **Fix:** an autouse fixture in `tests/conftest.py` tracks every `sqlite3.connect`
+  during a test and closes those connections at teardown (ones made in the app's
+  thread under `TestClient` are closed by the app's own shutdown); `mock_exec` /
+  `mock_count` close their connection at once. Peak open files: ~302 -> 23. `make test`
+  now runs under `ulimit -n 256`, so a future leak fails the gate in every environment.
+- **Regression test:** `backend/tests/unit/test_test_hygiene.py` (a connection opened
+  in one test is closed when it ends), plus the gate's `ulimit -n 256`.
+- **Commits:** repro `dda6be5` · fix `7a57433`
 
 ## Not bugs: follow-ups found alongside
 
