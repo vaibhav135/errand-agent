@@ -1,7 +1,8 @@
 """System prompt for the orchestrator.
 
 What: `SYSTEM_PROMPT` and `instructions(packet)`, which joins it with the state and
-      memory sections of the context packet.
+      memory sections of the context packet; `replacement_request(booking)`, the
+      code-written prompt when a provider cancels (Phase 7).
 
 Why:  The prompt states the rules the model is expected to follow, but none of the
       safety depends on it: the model has no tool that books, cancels or approves,
@@ -13,7 +14,10 @@ How:  Kept short, since every token counts against the context budget. State and
       (state) from preferences (memories) from what the user said (the conversation).
 """
 
+from errand_agent.memory.selection import SERVICE_LABEL
+from errand_agent.providers.models import Booking
 from errand_agent.workflow.context import ContextPacket
+from errand_agent.workflow.outcomes import when
 
 SYSTEM_PROMPT = """\
 You are Errand, an assistant that arranges home services (plumber, electrician,
@@ -49,3 +53,18 @@ def instructions(packet: ContextPacket) -> str:
     if packet.memories:
         sections.append(f"MEMORIES\n{packet.memories}")
     return "\n\n".join(sections)
+
+
+def replacement_request(booking: Booking) -> str:
+    """The prompt for a provider-cancellation run (D6). Code writes it, so it says it
+    isn't the user's message; the user has already been told by the monitor's notice."""
+    service = SERVICE_LABEL.get(booking.service, booking.service)
+    return (
+        f"[Event, not from the user] {booking.provider_name} cancelled the user's {service}"
+        f" booking ({booking.booking_id}) for {when(booking.slot)}. The user has been told."
+        f" Find a replacement {service} provider as close to that time as possible, within"
+        " the user's saved preferences (time window, budget, providers to avoid; a"
+        " preferred provider first). Use their default address's area. Propose the best"
+        " option for approval and say briefly why; if nothing fits, say so and ask whether"
+        " to widen the search."
+    )

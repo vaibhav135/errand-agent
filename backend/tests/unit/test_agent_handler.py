@@ -1,3 +1,4 @@
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -7,13 +8,17 @@ from pydantic_ai.messages import ModelRequest, UserPromptPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from errand_agent.agent.handler import MessageHandler, Reply
+from errand_agent.core.clock import IST
 from errand_agent.memory.conversation import ConversationStore
+from errand_agent.mocks.control import MockControl
 from errand_agent.mocks.scenario import Scenario
 from errand_agent.providers.errors import ProviderTimeout
 from errand_agent.tracing.recorder import Tracer
 from errand_agent.workflow.guarded_env import RunBudget
+from errand_agent.workflow.monitor import ProviderMonitor, ProviderNotice
 from tests.unit.agent_script import ScriptedModel, call, say
 from tests.unit.test_agent_loop import Streaming
+from tests.unit.test_agent_tools import first_slot
 from tests.unit.test_workflow_changes import COOLBREEZE
 from tests.unit.workflow_world import ScriptedEnv, World
 
@@ -363,3 +368,105 @@ async def test_parked_work_is_settled_before_the_run(tmp_path: Path) -> None:
         e for e in world.events if e.type == "run_started" and e.to_dict()["trigger"] == "reconcile"
     ]
     assert len(reconcile_runs) == 1
+
+
+# --- a provider cancelled: look for a replacement (Phase 7) ---------------------------------
+
+# A replacement near the cancelled slot (Tue 10 Nov, 10:00 IST), within a morning window.
+REPLACEMENT = {
+    "service": "ac_servicing",
+    "area": "Indiranagar",
+    "date_start": "2026-11-10",
+    "date_end": "2026-11-10",
+    "earliest_start": "08:00",
+    "latest_start": "12:00",
+    "budget_max_inr": 2500,
+}
+
+
+async def cancelled_by_provider(world: World) -> ProviderNotice:
+    """The monitor's notice for the seeded CoolBreeze booking, cancelled by the provider."""
+    MockControl(world.mock).cancel_by_provider(COOLBREEZE, "technician unavailable")
+    monitor = ProviderMonitor(
+        conn=world.conn,
+        env=world.mock,
+        conversations=ConversationStore(world.conn, clock=world.clock, ids=world.ids),
+        clock=world.clock,
+        tracer=Tracer(world.clock, world.ids, subscribers=[world.events.append]),
+    )
+    (notice,) = await monitor.check_once()
+    assert notice.decision == "replace"
+    return notice
+
+
+def finds_a_replacement() -> ScriptedModel:
+    return ScriptedModel(
+        [call("update_requirements", **REPLACEMENT)],
+        [call("search_and_compare")],
+        lambda m: [call("propose_booking", option_number=1, slot=first_slot(m))],
+        [say("Here's a replacement for that slot. Approve it to book.")],
+    )
+
+
+async def test_a_provider_cancellation_ends_at_a_fresh_approval_card(tmp_path: Path) -> None:
+    world = World(tmp_path, Scenario(book_outcomes=["success"]))
+    notice = await cancelled_by_provider(world)
+    model = finds_a_replacement()
+    h = handler(world, model.model())
+
+    reply = await h.handle_provider_cancellation(notice)
+
+    assert reply.outcome.kind == "needs_approval" and reply.outcome.approval is not None
+    card = reply.outcome.approval.details
+    assert card.action == "book" and card.provider_id.startswith("ac_")  # an AC provider
+    assert card.slot.astimezone(IST).date() == date(2026, 11, 10)  # the cancelled day
+    assert bookings(world) == 0  # nothing booked without approval
+    # The user said nothing: the monitor's notice, then the agent's reply.
+    assert [role for role, _ in saved(world)] == ["assistant", "assistant"]
+    assert saved(world)[-1][1] == "Here's a replacement for that slot. Approve it to book."
+    (started,) = run_events(world, reply.run_id, "run_started")
+    assert started["trigger"] == "provider_replacement"
+
+    booked = await send(h, "yes")  # a fresh approval, then the rebooking
+
+    assert booked.outcome.kind == "booked" and bookings(world) == 1
+
+
+async def test_the_event_tells_the_model_what_was_cancelled(world: World) -> None:
+    notice = await cancelled_by_provider(world)
+    prompts: list[str] = []
+
+    def model(messages: list[ModelMessage], info: AgentInfo) -> ModelResponse:
+        prompts.extend(
+            str(p.content)
+            for m in messages
+            if isinstance(m, ModelRequest)
+            for p in m.parts
+            if isinstance(p, UserPromptPart)
+        )
+        return ModelResponse(parts=[TextPart("Looking.")])
+
+    await handler(world, model).handle_provider_cancellation(notice)
+
+    (prompt,) = prompts
+    assert "CoolBreeze AC Care" in prompt and "Tue 10 Nov, 10:00" in prompt
+    assert "AC servicing" in prompt and "not from the user" in prompt
+
+
+async def test_nothing_is_remembered_from_the_event_text(world: World) -> None:
+    # The event is code-written: it must not count as the user's words, or the model
+    # could "remember" something the user never said.
+    notice = await cancelled_by_provider(world)
+    # A valid preference whose quote IS in the event text ("Tue 10 Nov, 10:00"), so only
+    # the provenance rule can stop it.
+    model = ScriptedModel(
+        [call("remember", key="earliest_start", value="10:00", quote="10:00")],
+        [say("Looking for a replacement.")],
+    )
+
+    await handler(world, model.model()).handle_provider_cancellation(notice)
+
+    remembered = world.conn.execute(
+        "SELECT count(*) FROM memories WHERE user_id = 'user_1'"
+    ).fetchone()[0]
+    assert remembered == 0

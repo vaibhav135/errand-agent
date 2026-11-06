@@ -39,7 +39,7 @@ from errand_agent.agent.budget import tool_definition_tokens
 from errand_agent.agent.deps import AgentDeps
 from errand_agent.agent.loop import run_agent, to_history
 from errand_agent.agent.orchestrator import build_orchestrator, orchestrator_tools
-from errand_agent.agent.prompts import SYSTEM_PROMPT, instructions
+from errand_agent.agent.prompts import SYSTEM_PROMPT, instructions, replacement_request
 from errand_agent.core.clock import Clock
 from errand_agent.core.ids import IdGen
 from errand_agent.memory.conversation import ConversationStore
@@ -56,6 +56,7 @@ from errand_agent.workflow.context import ContextBudget, ContextBuilder
 from errand_agent.workflow.decline import decline_pending
 from errand_agent.workflow.errands import ErrandStore
 from errand_agent.workflow.guarded_env import RunBudget
+from errand_agent.workflow.monitor import ProviderNotice
 from errand_agent.workflow.outcomes import (
     RunContext,
     RunOutcome,
@@ -194,6 +195,51 @@ class MessageHandler:
         )
         return Reply(outcome=outcome, run_id=run_id, suggestions=tuple(turn.shown))
 
+    async def handle_provider_cancellation(
+        self,
+        notice: ProviderNotice,
+        *,
+        on_text: Callable[[str], Awaitable[None]] | None = None,
+        on_tool: Callable[[str], Awaitable[None]] | None = None,
+    ) -> Reply:
+        """The monitor's "replace" decision (D6): the agent looks for a replacement within
+        the user's preferences and proposes it; approval and booking stay in code, as
+        for any card. The prompt is code-written and not saved as a user message (the
+        user said nothing; the monitor's notice is already in the conversation), and it
+        can't be quoted as the user's words. Every exit, limits and errors included,
+        ends in a saved reply, so the user is never left with only "looking…"."""
+        session_id, user_id = notice.session_id, notice.user_id
+        try:
+            await self._reconciler.reconcile_once(session_id=session_id)
+        except Exception:
+            logger.exception("per-run reconcile failed")
+        prompt = replacement_request(notice.booking)
+
+        run_id = ""
+        turn = Turn(on_text=on_text, on_tool=on_tool)
+
+        async def body(ctx: RunContext) -> RunOutcome:
+            nonlocal run_id
+            run_id = ctx.run.run_id
+            return await self._converse(
+                ctx, session_id=session_id, user_id=user_id, text=prompt, turn=turn, said=""
+            )
+
+        outcome = await run_with_outcome(
+            self._tracer,
+            session_id=session_id,
+            trigger="provider_replacement",
+            budget=self._budget,
+            env=self._env,
+            clock=self._clock,
+            errands=self._errands,
+            body=body,
+        )
+        self._conversation.append(
+            session_id, "assistant", outcome.message + shown_note(turn.shown), run_id=run_id
+        )
+        return Reply(outcome=outcome, run_id=run_id, suggestions=tuple(turn.shown))
+
     async def decide(
         self, *, session_id: str, approval_id: str, fingerprint: str, approve: bool
     ) -> Reply:
@@ -308,8 +354,18 @@ class MessageHandler:
         return RunOutcome(kind="answered", message=message)
 
     async def _converse(
-        self, ctx: RunContext, *, session_id: str, user_id: str, text: str, turn: "Turn"
+        self,
+        ctx: RunContext,
+        *,
+        session_id: str,
+        user_id: str,
+        text: str,
+        turn: "Turn",
+        said: str | None = None,
     ) -> RunOutcome:
+        """`text` is the prompt; `said` is what the user actually said, the provenance
+        `remember` / `update_profile` check quotes against (default: the prompt). An
+        event run passes "" so nothing can be saved from code-written text."""
         errand = self._errands.latest_open(session_id)
         deps = AgentDeps(
             conn=self._conn,
@@ -323,7 +379,7 @@ class MessageHandler:
             profiles=self._profiles,
             user_id=user_id,
             session_id=session_id,
-            user_message=text,
+            user_message=text if said is None else said,
             run=ctx.run,
             meter=ctx.meter,
             review_model=self._review_model,

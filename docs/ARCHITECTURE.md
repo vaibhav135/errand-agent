@@ -993,6 +993,16 @@ user message
   shows the reply without it) (BUG-8). Approval cards need no note: STATE reports any
   pending approval.
 
+  `handle_provider_cancellation(notice)` is the third way in (Phase 7, D6): the
+  monitor's "replace" decision. It runs the same model path with a code-written prompt
+  (`replacement_request`: what was cancelled, find a replacement within the saved
+  preferences, propose it), `trigger="provider_replacement"`. The prompt isn't saved as
+  a user message (the user said nothing; the monitor's notice is already in the
+  conversation), and the run's `user_message` is empty, so `remember` / `correct_memory`
+  / `update_profile` can't quote code-written text as the user's words. It ends like any
+  turn: an approval card (nothing booked until a yes or a click), or an honest reply when
+  nothing fits or a limit is hit.
+
 ### Web UI: `frontend/` (D4)
 - **What:** React 19 + Tailwind v4 + shadcn (radix-nova). Chat on the left; a tabbed side
   panel (Trace, Memory, Bookings, and Demo when the server runs in demo mode).
