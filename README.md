@@ -13,9 +13,16 @@ provider's records whenever an outcome is unclear.
 
 ## Quick start
 
-> **An Anthropic API key is required to run the app**: the agent is driven by Claude.
-> Put it in `backend/.env` (gitignored, never committed). Tests and evals run offline
-> against a scripted model and need no key.
+> **An LLM API key is required to run the app.** Put it in `backend/.env` (gitignored,
+> never committed).
+> - **Default: Anthropic.** `ANTHROPIC_API_KEY` alone is enough (Claude Sonnet 5.5 runs
+>   the agent, Claude Haiku 5.5 reads reviews).
+> - **Other providers:** set `ERRAND_MODEL` and that provider's key, e.g.
+>   `ERRAND_MODEL=openai:gpt-6.1-sol` with `OPENAI_API_KEY`.
+> - **Only Anthropic models have been tested.** Others should run, but we can't vouch for
+>   the same behaviour. The effort and prompt-caching settings apply to Anthropic only.
+>
+> Tests and evals run offline against a scripted model and need no key.
 
 Also needs [uv](https://docs.astral.sh/uv/) and [bun](https://bun.sh/).
 
@@ -104,8 +111,9 @@ sequenceDiagram
 - **Bounded:** limits on model turns, tool calls and wall-clock time. Every exit ends in
   a clear message.
 
-Models: Claude Sonnet 5.5 drives the agent, Claude Haiku 5.5 reads reviews (low effort,
-prompt caching: D5).
+Models: by default Claude Sonnet 5.5 drives the agent and Claude Haiku 5.5 reads reviews
+(low effort, prompt caching: D5). Any model can be configured, but only Anthropic models
+have been tested.
 
 ## Tests and evals
 
