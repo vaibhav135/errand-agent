@@ -171,6 +171,17 @@ every environment, not only on a default Mac.
   fingerprint of the card it displayed, so a card whose details changed since is not
   approved: the reply says so and carries the current card.
 
+### Trace API: `api/trace_routes.py`
+- **What:** `GET /api/events?session_id=` (SSE push) and `GET /api/sessions/{id}/runs`.
+- **Why:** some runs start with no request (the reconcile pass; Phase 7's "your
+  provider cancelled"), so the trace pane also listens to a push stream; past runs
+  make it whole again after a reload.
+- **How:** the push stream subscribes to the EventHub for one session: ": connected",
+  then a `trace` frame per event, and ": keep-alive" after `HEARTBEAT_SECONDS` (15) of
+  quiet, which also notices a client that left (then it unsubscribes and ends). Past
+  runs are read from the JSONL trace files (newest 50), in a worker thread so a long
+  history can't stall the loop; the reader touches files only, never SQLite.
+
 ### Memory and bookings API: `api/memory_routes.py`
 - **What:** `GET /api/memories` (saved facts and suggestions, apart), `POST
   /api/memories/{id}/confirm` · `/reject`, `PATCH /api/memories/{id}` `{value}`
