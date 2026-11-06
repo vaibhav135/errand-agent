@@ -34,6 +34,7 @@ from pydantic_ai import ModelRetry, RunContext
 from errand_agent.agent.deps import AgentDeps
 from errand_agent.agent.loop import trace_model_call
 from errand_agent.agent.review_reader import summarise_reviews
+from errand_agent.agent.toon import to_toon
 from errand_agent.core.clock import IST
 from errand_agent.memory.store import Memory, MemoryKey, ProvenanceError, Topic
 from errand_agent.providers.models import (
@@ -300,11 +301,11 @@ async def _bookings(deps: AgentDeps) -> list[Booking]:
     return await deps.env.list_bookings(deps.user_id)
 
 
-async def find_my_bookings(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]]:
+async def find_my_bookings(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]] | str:
     """The user's past and upcoming bookings (for "same electrician as last time",
     rescheduling or cancelling)."""
     now = ctx.deps.clock.now()
-    return [
+    rows = [
         {
             "booking_id": b.booking_id,
             "provider_id": b.provider_id,
@@ -316,6 +317,7 @@ async def find_my_bookings(ctx: RunContext[AgentDeps]) -> list[dict[str, Any]]:
         }
         for b in await _bookings(ctx.deps)
     ]
+    return to_toon("bookings", rows) if ctx.deps.result_format == "toon" else rows
 
 
 async def available_slots(
@@ -465,6 +467,10 @@ async def list_memories(
         # ~2,700 tokens on every call (more than the 1,500 working room), for nothing a
         # booking needs. Measured: ~3,470 -> ~780 (estimated tokens).
         result["personal_notes"] = sum(_personal(m) for m in active)
+    if ctx.deps.result_format == "toon":
+        rows = [{**row, "topic": row.get("topic")} for row in result.pop("saved")]  # uniform
+        counts = "\n".join(f"{k}: {v}" for k, v in result.items())
+        return to_toon("saved", rows) + "\n" + counts  # type: ignore[return-value]
     return result
 
 

@@ -31,6 +31,7 @@ import logging
 import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 from pydantic_ai.models import Model
 
@@ -102,7 +103,9 @@ class MessageHandler:
         review_model: Model | None = None,
         budget: RunBudget | None = None,
         context_budget: ContextBudget | None = None,
+        result_format: Literal["json", "toon"] = "json",  # experiment: agent/toon.py
     ) -> None:
+        self._result_format: Literal["json", "toon"] = result_format
         self._conn = conn
         self._clock = clock
         self._ids = ids
@@ -231,6 +234,7 @@ class MessageHandler:
             run=ctx.run,
             meter=ctx.meter,
             review_model=self._review_model,
+            result_format=self._result_format,
             errand_id=errand.errand_id if errand else None,
         )
         ctx.errand_id = deps.errand_id
