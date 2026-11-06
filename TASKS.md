@@ -60,7 +60,10 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Message handler: per-run reconcile, typed yes/no in code (no LLM), context → history,
       persistence (our `messages` table, not PydanticAI's history), outcome
 - [x] `make chat` CLI for live testing (stdlib loop, code-drawn card, per-turn trace footer)
-- [ ] Live smoke test (`make smoke`, skipped without a key, not part of `make test`)
+- [x] Manual live testing: three `make chat` sessions, which found BUG-2-5, 7, 8; the
+      automated smoke test moved to Phase 8, next to the evals
+- [x] Bugs from live testing fixed (BUGS.md 2-9); context design D1-D3 in docs/DECISIONS.md;
+      leaner fixed context (`list_memories`, tool schemas)
 
 ## Phase 6 — API & Web UI
 - [ ] FastAPI routes: messages, approvals, memories, SSE event stream
@@ -73,6 +76,8 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [ ] Notify → replacement search within preferences → fresh approval → rebook
 
 ## Phase 8 — Evals
+- [ ] Live smoke test (`make smoke`, skipped without a key, not part of `make test`): a real
+      conversation reaches an approval card and nothing is booked without "yes"
 - [ ] Scripted-model harness (`FunctionModel`) + simulated users
 - [ ] ≥20 scenarios asserting outcomes and invariants
 - [ ] Generated eval table (`evals/results.md`)
