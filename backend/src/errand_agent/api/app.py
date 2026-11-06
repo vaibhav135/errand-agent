@@ -18,6 +18,10 @@ How:  - Startup opens and migrates agent.db, and opens the mock world (migrates 
       - Defaults (Settings from env/.env, SystemClock, RandomIdGen) are used by the
         dev server (`uvicorn --factory`); tests pass their own.
       - All HTTP routes live under /api, so the built frontend can be served at /.
+      - `build_handler(services)` makes the MessageHandler (models, run and context
+        budgets from Settings). The chat CLI and the API both use it, so they can't
+        drift apart. It is separate from build_services so the app can start without
+        a model key; tests pass their own scripted model.
 """
 
 import asyncio
@@ -28,7 +32,10 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
 from fastapi import APIRouter, FastAPI
+from pydantic_ai.models import Model
 
+from errand_agent.agent import models as agent_models
+from errand_agent.agent.handler import MessageHandler
 from errand_agent.core.clock import Clock, SystemClock
 from errand_agent.core.config import Settings, load_settings
 from errand_agent.core.ids import IdGen, RandomIdGen
@@ -40,7 +47,9 @@ from errand_agent.store.migrate import migrate, migrations_for
 from errand_agent.tracing.recorder import JsonlWriter, Tracer
 from errand_agent.workflow.actions import ProviderActionStore
 from errand_agent.workflow.approvals import ApprovalStore
+from errand_agent.workflow.context import ContextBudget
 from errand_agent.workflow.errands import ErrandStore
+from errand_agent.workflow.guarded_env import RunBudget
 from errand_agent.workflow.reconciler import Reconciler
 
 
@@ -85,6 +94,27 @@ def build_services(settings: Settings, clock: Clock, ids: IdGen) -> Services:
     )
     return Services(
         settings, clock, ids, agent_db, world, tracer, errands, approvals, actions, reconciler
+    )
+
+
+def build_handler(
+    services: Services, *, model: Model | None = None, review_model: Model | None = None
+) -> MessageHandler:
+    """Raises ModelNotConfigured (with what to set) when no model can be built."""
+    settings = services.settings
+    main = model or agent_models.main_model(settings)
+    if review_model is None:  # a test's scripted model reads reviews too; else Settings
+        review_model = main if model is not None else agent_models.review_model(settings)
+    return MessageHandler(
+        conn=services.agent_db,
+        clock=services.clock,
+        ids=services.ids,
+        env=services.world,
+        tracer=services.tracer,
+        model=main,
+        review_model=review_model,
+        budget=RunBudget.from_settings(settings),
+        context_budget=ContextBudget.from_settings(settings),
     )
 
 

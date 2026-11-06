@@ -53,22 +53,31 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Seed ≥50 memories + long prior conversation (deterministic generator, `make seed-data`)
 
 ## Phase 5 — Agent
-- [ ] Per-run reconcile check (`reconcile_once(session_id=...)`) at the start of each user run
-- [ ] PydanticAI orchestrator + tool wrappers (model configurable via env)
-- [ ] Quarantined review-reader sub-agent (no tools; typed summary only)
-- [ ] Chat-history persistence (`ModelMessagesTypeAdapter`)
+- [x] Model factory: ERRAND_MODEL / ERRAND_REVIEW_MODEL, keys passed explicitly, clear errors
+- [x] Agent tools = workflow commands only (no book / cancel / approve tools), FunctionModel-tested
+- [x] Quarantined review reader: no tools, fixed-list fields only (no free text)
+- [x] Run loop via `agent.iter`: turn budget, `model_call` traces with tokens and cost
+- [x] Message handler: per-run reconcile, typed yes/no in code (no LLM), context → history,
+      persistence (our `messages` table, not PydanticAI's history), outcome
+- [x] `make chat` CLI for live testing (stdlib loop, code-drawn card, per-turn trace footer)
+- [x] Manual live testing: three `make chat` sessions, which found BUG-2-5, 7, 8; the
+      automated smoke test moved to Phase 8, next to the evals
+- [x] Bugs from live testing fixed (BUGS.md 2-9); context design D1-D3 in docs/DECISIONS.md;
+      leaner fixed context (`list_memories`, tool schemas)
 
-## Phase 6 — Proactive follow-up
-- [ ] Simulated provider-cancellation event + monitor
-- [ ] Notify → replacement search within preferences → fresh approval → rebook
-
-## Phase 7 — API & Web UI
+## Phase 6 — API & Web UI
 - [ ] FastAPI routes: messages, approvals, memories, SSE event stream
 - [ ] ChatPane + ApprovalCard (button + typed "yes")
 - [ ] TracePane (live trace events)
 - [ ] MemoryPanel (inspect / correct / forget)
 
+## Phase 7 — Proactive follow-up
+- [ ] Simulated provider-cancellation event + monitor
+- [ ] Notify → replacement search within preferences → fresh approval → rebook
+
 ## Phase 8 — Evals
+- [ ] Live smoke test (`make smoke`, skipped without a key, not part of `make test`): a real
+      conversation reaches an approval card and nothing is booked without "yes"
 - [ ] Scripted-model harness (`FunctionModel`) + simulated users
 - [ ] ≥20 scenarios asserting outcomes and invariants
 - [ ] Generated eval table (`evals/results.md`)
@@ -83,4 +92,6 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [ ] BUGS.md finalised (3 real bugs)
 - [ ] Raw end-to-end trace in `docs/traces/`
 - [ ] Demo recording (3–5 min, chat + trace side by side)
-- [ ] AI coding transcripts in `transcripts/`
+- [ ] AI coding transcripts: `scripts/export_transcript.py` turns the raw session JSONL(s)
+      (kept outside git) into `docs/transcript.md`: full user/assistant turns, one line per
+      tool call, assignment PDF text omitted, secrets/PII redacted (fails on key-shaped text)

@@ -240,12 +240,13 @@ def test_context_sent_is_logged_with_reasons(env: Env) -> None:
     p = env.builder().build(user_id=U, session_id=S, errand_id=None, system=SYSTEM, run=env.run)
 
     [event] = [e.to_dict() for e in env.events if e.type == "context_sent"]
-    assert event["budget"] == {"total": 6000, "memories": 600}
+    assert event["budget"] == {"total": 7500, "memories": 600, "working": 1500}
     assert event["tokens"] == p.tokens
     assert event["memory_ids"] == [kept.memory_id]
     assert {"memory_id": gone.memory_id, "reason": "irrelevant"} in event["excluded_memories"]
     assert event["messages_included"] == len(p.messages)
     assert event["messages_dropped"] == 0
+    assert event["messages_out_of_scope"] == 0
 
 
 def test_build_is_deterministic(env: Env) -> None:

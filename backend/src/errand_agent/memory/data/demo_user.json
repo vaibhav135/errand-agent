@@ -38,7 +38,7 @@
       "value": "cut down on sugar",
       "status": "active",
       "quote": "cut down on sugar",
-      "days_ago": 85
+      "days_ago": 88
     },
     {
       "id": "note_26",
@@ -48,7 +48,7 @@
       "value": "avoid deep-fried food",
       "status": "active",
       "quote": "avoid deep-fried food",
-      "days_ago": 82
+      "days_ago": 85
     },
     {
       "id": "note_27",
@@ -58,7 +58,7 @@
       "value": "renew my passport next year",
       "status": "active",
       "quote": "renew my passport next year",
-      "days_ago": 82
+      "days_ago": 85
     },
     {
       "id": "start_old",
@@ -77,7 +77,7 @@
       "value": "take the metro to work",
       "status": "active",
       "quote": "take the metro to work",
-      "days_ago": 76
+      "days_ago": 79
     },
     {
       "id": "note_28",
@@ -87,7 +87,7 @@
       "value": "three days in office",
       "status": "active",
       "quote": "three days in office",
-      "days_ago": 76
+      "days_ago": 79
     },
     {
       "id": "note_31",
@@ -97,7 +97,7 @@
       "value": "collect old coins",
       "status": "active",
       "quote": "collect old coins",
-      "days_ago": 76
+      "days_ago": 79
     },
     {
       "id": "note_30",
@@ -107,6 +107,26 @@
       "value": "birthday is in March",
       "status": "active",
       "quote": "birthday is in March",
+      "days_ago": 78
+    },
+    {
+      "id": "note_23",
+      "key": "note",
+      "scope": "global",
+      "topic": "other",
+      "value": "animal shelter on Sundays",
+      "status": "active",
+      "quote": "animal shelter on Sundays",
+      "days_ago": 77
+    },
+    {
+      "id": "note_20",
+      "key": "note",
+      "scope": "global",
+      "topic": "other",
+      "value": "local football club",
+      "status": "active",
+      "quote": "local football club",
       "days_ago": 75
     },
     {
@@ -117,26 +137,6 @@
       "days_ago": 75
     },
     {
-      "id": "note_23",
-      "key": "note",
-      "scope": "global",
-      "topic": "other",
-      "value": "animal shelter on Sundays",
-      "status": "active",
-      "quote": "animal shelter on Sundays",
-      "days_ago": 74
-    },
-    {
-      "id": "note_20",
-      "key": "note",
-      "scope": "global",
-      "topic": "other",
-      "value": "local football club",
-      "status": "active",
-      "quote": "local football club",
-      "days_ago": 72
-    },
-    {
       "id": "note_06",
       "key": "note",
       "scope": "global",
@@ -144,7 +144,7 @@
       "value": "Goa trip in December",
       "status": "active",
       "quote": "Goa trip in December",
-      "days_ago": 70
+      "days_ago": 73
     },
     {
       "id": "plumb_budget_old",
@@ -163,7 +163,7 @@
       "value": "office is near Koramangala",
       "status": "active",
       "quote": "office is near Koramangala",
-      "days_ago": 66
+      "days_ago": 69
     },
     {
       "id": "aquacare",
@@ -194,7 +194,7 @@
       "value": "school ends at 3pm",
       "status": "active",
       "quote": "school ends at 3pm",
-      "days_ago": 57
+      "days_ago": 60
     },
     {
       "id": "note_21",
@@ -204,7 +204,7 @@
       "value": "learning Kannada",
       "status": "active",
       "quote": "learning Kannada",
-      "days_ago": 56
+      "days_ago": 59
     },
     {
       "id": "note_16",
@@ -214,6 +214,26 @@
       "value": "mother lives with us on weekends",
       "status": "active",
       "quote": "mother lives with us on weekends",
+      "days_ago": 58
+    },
+    {
+      "id": "note_02",
+      "key": "note",
+      "scope": "global",
+      "topic": "food",
+      "value": "dosa place on weekends",
+      "status": "active",
+      "quote": "dosa place on weekends",
+      "days_ago": 55
+    },
+    {
+      "id": "note_32",
+      "key": "note",
+      "scope": "global",
+      "topic": "food",
+      "value": "Mango season",
+      "status": "active",
+      "quote": "Mango season",
       "days_ago": 55
     },
     {
@@ -225,24 +245,14 @@
       "days_ago": 55
     },
     {
-      "id": "note_02",
+      "id": "note_08",
       "key": "note",
       "scope": "global",
-      "topic": "food",
-      "value": "dosa place on weekends",
+      "topic": "travel",
+      "value": "visit from Mysuru",
       "status": "active",
-      "quote": "dosa place on weekends",
-      "days_ago": 52
-    },
-    {
-      "id": "note_32",
-      "key": "note",
-      "scope": "global",
-      "topic": "food",
-      "value": "Mango season",
-      "status": "active",
-      "quote": "Mango season",
-      "days_ago": 52
+      "quote": "visit from Mysuru",
+      "days_ago": 51
     },
     {
       "id": "addr",
@@ -255,14 +265,14 @@
       "days_ago": 50
     },
     {
-      "id": "note_08",
+      "id": "note_00",
       "key": "note",
       "scope": "global",
-      "topic": "travel",
-      "value": "visit from Mysuru",
+      "topic": "food",
+      "value": "I'm vegetarian",
       "status": "active",
-      "quote": "visit from Mysuru",
-      "days_ago": 48
+      "quote": "I'm vegetarian",
+      "days_ago": 46
     },
     {
       "id": "latest",
@@ -272,16 +282,6 @@
       "status": "active",
       "quote": "Nothing after 6pm",
       "days_ago": 45
-    },
-    {
-      "id": "note_00",
-      "key": "note",
-      "scope": "global",
-      "topic": "food",
-      "value": "I'm vegetarian",
-      "status": "active",
-      "quote": "I'm vegetarian",
-      "days_ago": 43
     },
     {
       "id": "start",
@@ -303,6 +303,16 @@
       "days_ago": 35
     },
     {
+      "id": "note_18",
+      "key": "note",
+      "scope": "global",
+      "topic": "family",
+      "value": "husband handles the car servicing",
+      "status": "active",
+      "quote": "husband handles the car servicing",
+      "days_ago": 35
+    },
+    {
       "id": "ac_budget",
       "key": "budget_max_inr",
       "scope": "ac_servicing",
@@ -312,16 +322,6 @@
       "days_ago": 33
     },
     {
-      "id": "note_18",
-      "key": "note",
-      "scope": "global",
-      "topic": "family",
-      "value": "husband handles the car servicing",
-      "status": "active",
-      "quote": "husband handles the car servicing",
-      "days_ago": 32
-    },
-    {
       "id": "note_25",
       "key": "note",
       "scope": "global",
@@ -329,7 +329,7 @@
       "value": "favourite colour is teal",
       "status": "active",
       "quote": "favourite colour is teal",
-      "days_ago": 30
+      "days_ago": 33
     },
     {
       "id": "note_34",
@@ -339,7 +339,17 @@
       "value": "Payday is the last working day",
       "status": "active",
       "quote": "Payday is the last working day",
-      "days_ago": 30
+      "days_ago": 33
+    },
+    {
+      "id": "note_12",
+      "key": "note",
+      "scope": "global",
+      "topic": "work",
+      "value": "Quarter-end weeks are crazy",
+      "status": "active",
+      "quote": "Quarter-end weeks are crazy",
+      "days_ago": 32
     },
     {
       "id": "plumb_budget",
@@ -350,16 +360,6 @@
       "replaces": "plumb_budget_old",
       "quote": "for plumbers up to 1500",
       "days_ago": 30
-    },
-    {
-      "id": "note_12",
-      "key": "note",
-      "scope": "global",
-      "topic": "work",
-      "value": "Quarter-end weeks are crazy",
-      "status": "active",
-      "quote": "Quarter-end weeks are crazy",
-      "days_ago": 29
     },
     {
       "id": "avoid_breezefix",
@@ -391,7 +391,17 @@
       "value": "prefer filter coffee",
       "status": "active",
       "quote": "prefer filter coffee",
-      "days_ago": 21
+      "days_ago": 24
+    },
+    {
+      "id": "note_24",
+      "key": "note",
+      "scope": "global",
+      "topic": "other",
+      "value": "yoga in the mornings",
+      "status": "active",
+      "quote": "yoga in the mornings",
+      "days_ago": 20
     },
     {
       "id": "parking",
@@ -404,14 +414,34 @@
       "days_ago": 20
     },
     {
-      "id": "note_24",
+      "id": "note_07",
       "key": "note",
       "scope": "global",
-      "topic": "other",
-      "value": "yoga in the mornings",
+      "topic": "travel",
+      "value": "prefer window seats",
       "status": "active",
-      "quote": "yoga in the mornings",
+      "quote": "prefer window seats",
       "days_ago": 17
+    },
+    {
+      "id": "note_14",
+      "key": "note",
+      "scope": "global",
+      "topic": "work",
+      "value": "Fridays I finish early",
+      "status": "active",
+      "quote": "Fridays I finish early",
+      "days_ago": 16
+    },
+    {
+      "id": "note_19",
+      "key": "note",
+      "scope": "global",
+      "topic": "family",
+      "value": "cook comes at 7am",
+      "status": "active",
+      "quote": "cook comes at 7am",
+      "days_ago": 16
     },
     {
       "id": "freshnest",
@@ -428,36 +458,6 @@
       "days_ago": 15
     },
     {
-      "id": "note_07",
-      "key": "note",
-      "scope": "global",
-      "topic": "travel",
-      "value": "prefer window seats",
-      "status": "active",
-      "quote": "prefer window seats",
-      "days_ago": 14
-    },
-    {
-      "id": "note_14",
-      "key": "note",
-      "scope": "global",
-      "topic": "work",
-      "value": "Fridays I finish early",
-      "status": "active",
-      "quote": "Fridays I finish early",
-      "days_ago": 13
-    },
-    {
-      "id": "note_19",
-      "key": "note",
-      "scope": "global",
-      "topic": "family",
-      "value": "cook comes at 7am",
-      "status": "active",
-      "quote": "cook comes at 7am",
-      "days_ago": 13
-    },
-    {
       "id": "note_05",
       "key": "note",
       "scope": "global",
@@ -465,7 +465,7 @@
       "value": "travel to Pune for work",
       "status": "active",
       "quote": "travel to Pune for work",
-      "days_ago": 11
+      "days_ago": 14
     },
     {
       "id": "note_17",
@@ -475,6 +475,66 @@
       "value": "We have a newborn",
       "status": "active",
       "quote": "We have a newborn",
+      "days_ago": 13
+    },
+    {
+      "id": "note_10",
+      "key": "note",
+      "scope": "global",
+      "topic": "work",
+      "value": "standups at 9:30",
+      "status": "active",
+      "quote": "standups at 9:30",
+      "days_ago": 12
+    },
+    {
+      "id": "note_22",
+      "key": "note",
+      "scope": "global",
+      "topic": "other",
+      "value": "mystery novels",
+      "status": "active",
+      "quote": "mystery novels",
+      "days_ago": 12
+    },
+    {
+      "id": "note_29",
+      "key": "note",
+      "scope": "global",
+      "topic": "other",
+      "value": "new bicycle",
+      "status": "active",
+      "quote": "new bicycle",
+      "days_ago": 12
+    },
+    {
+      "id": "note_04",
+      "key": "note",
+      "scope": "global",
+      "topic": "food",
+      "value": "allergic to peanuts",
+      "status": "active",
+      "quote": "allergic to peanuts",
+      "days_ago": 11
+    },
+    {
+      "id": "note_33",
+      "key": "note",
+      "scope": "global",
+      "topic": "travel",
+      "value": "carsick on long drives",
+      "status": "active",
+      "quote": "carsick on long drives",
+      "days_ago": 11
+    },
+    {
+      "id": "note_35",
+      "key": "note",
+      "scope": "global",
+      "topic": "other",
+      "value": "terrible with plants",
+      "status": "active",
+      "quote": "terrible with plants",
       "days_ago": 10
     },
     {
@@ -491,33 +551,13 @@
       "days_ago": 10
     },
     {
-      "id": "note_10",
+      "id": "note_13",
       "key": "note",
       "scope": "global",
       "topic": "work",
-      "value": "standups at 9:30",
+      "value": "on calls most afternoons",
       "status": "active",
-      "quote": "standups at 9:30",
-      "days_ago": 9
-    },
-    {
-      "id": "note_22",
-      "key": "note",
-      "scope": "global",
-      "topic": "other",
-      "value": "mystery novels",
-      "status": "active",
-      "quote": "mystery novels",
-      "days_ago": 9
-    },
-    {
-      "id": "note_29",
-      "key": "note",
-      "scope": "global",
-      "topic": "other",
-      "value": "new bicycle",
-      "status": "active",
-      "quote": "new bicycle",
+      "quote": "on calls most afternoons",
       "days_ago": 9
     },
     {
@@ -532,46 +572,6 @@
       "source": "inferred",
       "reason": "2 completed bookings with CoolBreeze AC Care",
       "days_ago": 8
-    },
-    {
-      "id": "note_04",
-      "key": "note",
-      "scope": "global",
-      "topic": "food",
-      "value": "allergic to peanuts",
-      "status": "active",
-      "quote": "allergic to peanuts",
-      "days_ago": 8
-    },
-    {
-      "id": "note_33",
-      "key": "note",
-      "scope": "global",
-      "topic": "travel",
-      "value": "carsick on long drives",
-      "status": "active",
-      "quote": "carsick on long drives",
-      "days_ago": 8
-    },
-    {
-      "id": "note_35",
-      "key": "note",
-      "scope": "global",
-      "topic": "other",
-      "value": "terrible with plants",
-      "status": "active",
-      "quote": "terrible with plants",
-      "days_ago": 7
-    },
-    {
-      "id": "note_13",
-      "key": "note",
-      "scope": "global",
-      "topic": "work",
-      "value": "on calls most afternoons",
-      "status": "active",
-      "quote": "on calls most afternoons",
-      "days_ago": 6
     }
   ],
   "sessions": [
@@ -589,75 +589,75 @@
         },
         {
           "role": "user",
-          "content": "I volunteer at the animal shelter on Sundays."
+          "content": "How early should I book?"
         },
         {
           "role": "assistant",
-          "content": "Understood, I'll keep that in mind."
+          "content": "A few days ahead is safest; weekends fill up first."
         },
         {
           "role": "user",
-          "content": "Quarter-end weeks are crazy for me."
+          "content": "Do I need to be home for the visit?"
         },
         {
           "role": "assistant",
-          "content": "Thanks, I've saved that."
+          "content": "Usually yes, or someone who can let them in."
         },
         {
           "role": "user",
-          "content": "I collect old coins."
+          "content": "Can you help with appliance repair?"
         },
         {
           "role": "assistant",
-          "content": "Understood, I'll keep that in mind."
+          "content": "Not yet: I can arrange plumbers, electricians, AC servicing, cleaning and carpenters."
         },
         {
           "role": "user",
-          "content": "By the way, I'm vegetarian."
+          "content": "Is it going to rain tomorrow?"
         },
         {
           "role": "assistant",
-          "content": "Understood, I'll keep that in mind."
+          "content": "I can't check the weather, sorry. I can help with home services."
         },
         {
           "role": "user",
-          "content": "They can use visitor parking in the basement."
+          "content": "How early should I book?"
         },
         {
           "role": "assistant",
-          "content": "Noted, thanks for telling me."
+          "content": "A few days ahead is safest; weekends fill up first."
         },
         {
           "role": "user",
-          "content": "I support the local football club."
+          "content": "How early should I book?"
         },
         {
           "role": "assistant",
-          "content": "Noted, thanks for telling me."
+          "content": "A few days ahead is safest; weekends fill up first."
         },
         {
           "role": "user",
-          "content": "Can you find a plumber this week?"
+          "content": "Thursday morning, please."
         },
         {
           "role": "assistant",
-          "content": "Sure. Which day works best for you?"
+          "content": "I'll look for Thursday morning slots."
         },
         {
           "role": "user",
-          "content": "Please check the cleaning booking for Saturday."
+          "content": "Do I need to be home for the visit?"
         },
         {
           "role": "assistant",
-          "content": "Saturday's cleaning is confirmed for 11:00."
+          "content": "Usually yes, or someone who can let them in."
         },
         {
           "role": "user",
-          "content": "Can you find a plumber this week?"
+          "content": "Do they bring their own tools?"
         },
         {
           "role": "assistant",
-          "content": "Sure. Which day works best for you?"
+          "content": "Usually yes. I can note it in the booking if needed."
         }
       ]
     },
@@ -667,23 +667,15 @@
       "messages": [
         {
           "role": "user",
-          "content": "Grandma's birthday is in March."
+          "content": "Use my parents' place as the default for now."
         },
         {
           "role": "assistant",
-          "content": "Got it, I'll remember that."
+          "content": "Noted, thanks for telling me."
         },
         {
           "role": "user",
-          "content": "Fridays I finish early."
-        },
-        {
-          "role": "assistant",
-          "content": "Understood, I'll keep that in mind."
-        },
-        {
-          "role": "user",
-          "content": "My favourite colour is teal."
+          "content": "I'm trying to cut down on sugar."
         },
         {
           "role": "assistant",
@@ -691,15 +683,7 @@
         },
         {
           "role": "user",
-          "content": "Also [forgotten], so weekdays are flexible."
-        },
-        {
-          "role": "assistant",
-          "content": "Okay, noted."
-        },
-        {
-          "role": "user",
-          "content": "I'm terrible with plants."
+          "content": "We avoid deep-fried food at home."
         },
         {
           "role": "assistant",
@@ -707,11 +691,19 @@
         },
         {
           "role": "user",
-          "content": "Any update on my booking?"
+          "content": "I renew my passport next year."
         },
         {
           "role": "assistant",
-          "content": "Your booking is confirmed. I'll message you if anything changes."
+          "content": "Noted, thanks for telling me."
+        },
+        {
+          "role": "user",
+          "content": "Do I need to be home for the visit?"
+        },
+        {
+          "role": "assistant",
+          "content": "Usually yes, or someone who can let them in."
         },
         {
           "role": "user",
@@ -723,27 +715,35 @@
         },
         {
           "role": "user",
-          "content": "Do they bring their own tools?"
-        },
-        {
-          "role": "assistant",
-          "content": "Usually yes. I can note it in the booking if needed."
-        },
-        {
-          "role": "user",
-          "content": "Thanks, that's all for now."
-        },
-        {
-          "role": "assistant",
-          "content": "You're welcome. Message me any time."
-        },
-        {
-          "role": "user",
           "content": "Thursday morning, please."
         },
         {
           "role": "assistant",
           "content": "I'll look for Thursday morning slots."
+        },
+        {
+          "role": "user",
+          "content": "How early should I book?"
+        },
+        {
+          "role": "assistant",
+          "content": "A few days ahead is safest; weekends fill up first."
+        },
+        {
+          "role": "user",
+          "content": "Is CoolBreeze any good?"
+        },
+        {
+          "role": "assistant",
+          "content": "CoolBreeze AC Care is rated 4.5 from 176 reviews."
+        },
+        {
+          "role": "user",
+          "content": "Do I need to be home for the visit?"
+        },
+        {
+          "role": "assistant",
+          "content": "Usually yes, or someone who can let them in."
         }
       ]
     },
@@ -761,31 +761,7 @@
         },
         {
           "role": "user",
-          "content": "We avoid deep-fried food at home."
-        },
-        {
-          "role": "assistant",
-          "content": "Got it, I'll remember that."
-        },
-        {
-          "role": "user",
-          "content": "Mango season is my favourite time."
-        },
-        {
-          "role": "assistant",
-          "content": "Noted, thanks for telling me."
-        },
-        {
-          "role": "user",
-          "content": "Prices went up, so for plumbers up to 1500 is okay now."
-        },
-        {
-          "role": "assistant",
-          "content": "Understood, I'll keep that in mind."
-        },
-        {
-          "role": "user",
-          "content": "My son is allergic to peanuts."
+          "content": "I take the metro to work most days."
         },
         {
           "role": "assistant",
@@ -793,19 +769,113 @@
         },
         {
           "role": "user",
-          "content": "Thursday morning, please."
+          "content": "I work hybrid, three days in office."
         },
         {
           "role": "assistant",
-          "content": "I'll look for Thursday morning slots."
+          "content": "Noted, thanks for telling me."
         },
         {
           "role": "user",
-          "content": "Any update on my booking?"
+          "content": "I collect old coins."
         },
         {
           "role": "assistant",
-          "content": "Your booking is confirmed. I'll message you if anything changes."
+          "content": "Got it, I'll remember that."
+        },
+        {
+          "role": "user",
+          "content": "Grandma's birthday is in March."
+        },
+        {
+          "role": "assistant",
+          "content": "Noted, thanks for telling me."
+        },
+        {
+          "role": "user",
+          "content": "I volunteer at the animal shelter on Sundays."
+        },
+        {
+          "role": "assistant",
+          "content": "Thanks, I've saved that."
+        },
+        {
+          "role": "user",
+          "content": "I support the local football club."
+        },
+        {
+          "role": "assistant",
+          "content": "Got it, I'll remember that."
+        },
+        {
+          "role": "user",
+          "content": "[forgotten] for anything with pipes."
+        },
+        {
+          "role": "assistant",
+          "content": "Got it, I'll remember that."
+        },
+        {
+          "role": "user",
+          "content": "How much does AC servicing usually cost?"
+        },
+        {
+          "role": "assistant",
+          "content": "Most providers here charge between ₹850 and ₹1,500."
+        },
+        {
+          "role": "user",
+          "content": "Is it going to rain tomorrow?"
+        },
+        {
+          "role": "assistant",
+          "content": "I can't check the weather, sorry. I can help with home services."
+        }
+      ]
+    },
+    {
+      "session_id": "sess_hist_04",
+      "days_ago": 70,
+      "messages": [
+        {
+          "role": "user",
+          "content": "We're planning a Goa trip in December."
+        },
+        {
+          "role": "assistant",
+          "content": "Got it, I'll remember that."
+        },
+        {
+          "role": "user",
+          "content": "Keep plumbers under 1200 rupees please."
+        },
+        {
+          "role": "assistant",
+          "content": "Noted, thanks for telling me."
+        },
+        {
+          "role": "user",
+          "content": "My office is near Koramangala."
+        },
+        {
+          "role": "assistant",
+          "content": "Understood, I'll keep that in mind."
+        },
+        {
+          "role": "user",
+          "content": "Never mind, I'll do it later."
+        },
+        {
+          "role": "assistant",
+          "content": "No problem. I've left it for now."
+        },
+        {
+          "role": "user",
+          "content": "How much does AC servicing usually cost?"
+        },
+        {
+          "role": "assistant",
+          "content": "Most providers here charge between ₹850 and ₹1,500."
         },
         {
           "role": "user",
@@ -817,53 +887,53 @@
         },
         {
           "role": "user",
-          "content": "Is CoolBreeze any good?"
+          "content": "Do they bring their own tools?"
         },
         {
           "role": "assistant",
-          "content": "CoolBreeze AC Care is rated 4.5 from 176 reviews."
+          "content": "Usually yes. I can note it in the booking if needed."
         },
         {
           "role": "user",
-          "content": "Can someone fix a wardrobe hinge?"
+          "content": "Can you help with appliance repair?"
         },
         {
           "role": "assistant",
-          "content": "Yes, carpenters can. Which area should I search?"
+          "content": "Not yet: I can arrange plumbers, electricians, AC servicing, cleaning and carpenters."
+        },
+        {
+          "role": "user",
+          "content": "Never mind, I'll do it later."
+        },
+        {
+          "role": "assistant",
+          "content": "No problem. I've left it for now."
+        },
+        {
+          "role": "user",
+          "content": "Is it going to rain tomorrow?"
+        },
+        {
+          "role": "assistant",
+          "content": "I can't check the weather, sorry. I can help with home services."
         }
       ]
     },
     {
-      "session_id": "sess_hist_04",
-      "days_ago": 70,
+      "session_id": "sess_hist_05",
+      "days_ago": 60,
       "messages": [
         {
           "role": "user",
-          "content": "I really prefer filter coffee over instant."
+          "content": "Oh and [forgotten], keep that in mind."
         },
         {
           "role": "assistant",
-          "content": "Thanks, I've saved that."
+          "content": "Okay, noted."
         },
         {
           "role": "user",
-          "content": "I'm on calls most afternoons."
-        },
-        {
-          "role": "assistant",
-          "content": "Got it, I'll remember that."
-        },
-        {
-          "role": "user",
-          "content": "I get carsick on long drives."
-        },
-        {
-          "role": "assistant",
-          "content": "Got it, I'll remember that."
-        },
-        {
-          "role": "user",
-          "content": "Use my parents' place as the default for now."
+          "content": "My daughter's school ends at 3pm."
         },
         {
           "role": "assistant",
@@ -875,39 +945,55 @@
         },
         {
           "role": "assistant",
+          "content": "Thanks, I've saved that."
+        },
+        {
+          "role": "user",
+          "content": "My mother lives with us on weekends."
+        },
+        {
+          "role": "assistant",
           "content": "Understood, I'll keep that in mind."
         },
         {
           "role": "user",
-          "content": "How much does AC servicing usually cost?"
+          "content": "We order from the dosa place on weekends."
         },
         {
           "role": "assistant",
-          "content": "Most providers here charge between ₹850 and ₹1,500."
+          "content": "Understood, I'll keep that in mind."
         },
         {
           "role": "user",
-          "content": "Do they bring their own tools?"
+          "content": "Mango season is my favourite time."
         },
         {
           "role": "assistant",
-          "content": "Usually yes. I can note it in the booking if needed."
+          "content": "Thanks, I've saved that."
         },
         {
           "role": "user",
-          "content": "Do they bring their own tools?"
+          "content": "Also [forgotten], so weekdays are flexible."
         },
         {
           "role": "assistant",
-          "content": "Usually yes. I can note it in the booking if needed."
+          "content": "Okay, noted."
         },
         {
           "role": "user",
-          "content": "How much does AC servicing usually cost?"
+          "content": "Can you find a plumber this week?"
         },
         {
           "role": "assistant",
-          "content": "Most providers here charge between ₹850 and ₹1,500."
+          "content": "Sure. Which day works best for you?"
+        },
+        {
+          "role": "user",
+          "content": "Thursday morning, please."
+        },
+        {
+          "role": "assistant",
+          "content": "I'll look for Thursday morning slots."
         },
         {
           "role": "user",
@@ -920,12 +1006,12 @@
       ]
     },
     {
-      "session_id": "sess_hist_05",
-      "days_ago": 60,
+      "session_id": "sess_hist_06",
+      "days_ago": 50,
       "messages": [
         {
           "role": "user",
-          "content": "I have standups at 9:30 every weekday."
+          "content": "My parents visit from Mysuru every summer."
         },
         {
           "role": "assistant",
@@ -933,23 +1019,85 @@
         },
         {
           "role": "user",
-          "content": "Payday is the last working day."
+          "content": "I've moved back, make Home the default address again."
         },
         {
           "role": "assistant",
-          "content": "Thanks, I've saved that."
+          "content": "Noted, thanks for telling me."
         },
         {
           "role": "user",
-          "content": "[forgotten] for anything with pipes."
+          "content": "By the way, I'm vegetarian."
         },
         {
           "role": "assistant",
-          "content": "Understood, I'll keep that in mind."
+          "content": "Noted, thanks for telling me."
         },
         {
           "role": "user",
-          "content": "I do yoga in the mornings."
+          "content": "Nothing after 6pm, I'm usually out in the evening."
+        },
+        {
+          "role": "assistant",
+          "content": "Noted, thanks for telling me."
+        },
+        {
+          "role": "user",
+          "content": "How early should I book?"
+        },
+        {
+          "role": "assistant",
+          "content": "A few days ahead is safest; weekends fill up first."
+        },
+        {
+          "role": "user",
+          "content": "Can you find a plumber this week?"
+        },
+        {
+          "role": "assistant",
+          "content": "Sure. Which day works best for you?"
+        },
+        {
+          "role": "user",
+          "content": "Is CoolBreeze any good?"
+        },
+        {
+          "role": "assistant",
+          "content": "CoolBreeze AC Care is rated 4.5 from 176 reviews."
+        },
+        {
+          "role": "user",
+          "content": "Is CoolBreeze any good?"
+        },
+        {
+          "role": "assistant",
+          "content": "CoolBreeze AC Care is rated 4.5 from 176 reviews."
+        },
+        {
+          "role": "user",
+          "content": "Never mind, I'll do it later."
+        },
+        {
+          "role": "assistant",
+          "content": "No problem. I've left it for now."
+        },
+        {
+          "role": "user",
+          "content": "Can you help with appliance repair?"
+        },
+        {
+          "role": "assistant",
+          "content": "Not yet: I can arrange plumbers, electricians, AC servicing, cleaning and carpenters."
+        }
+      ]
+    },
+    {
+      "session_id": "sess_hist_07",
+      "days_ago": 40,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Actually, please remember never before 10am, mornings are hectic."
         },
         {
           "role": "assistant",
@@ -965,371 +1113,11 @@
         },
         {
           "role": "user",
-          "content": "Who is coming for the AC?"
-        },
-        {
-          "role": "assistant",
-          "content": "CoolBreeze AC Care is scheduled for your AC servicing."
-        },
-        {
-          "role": "user",
-          "content": "Can someone fix a wardrobe hinge?"
-        },
-        {
-          "role": "assistant",
-          "content": "Yes, carpenters can. Which area should I search?"
-        },
-        {
-          "role": "user",
-          "content": "Do they bring their own tools?"
-        },
-        {
-          "role": "assistant",
-          "content": "Usually yes. I can note it in the booking if needed."
-        },
-        {
-          "role": "user",
-          "content": "Please check the cleaning booking for Saturday."
-        },
-        {
-          "role": "assistant",
-          "content": "Saturday's cleaning is confirmed for 11:00."
-        },
-        {
-          "role": "user",
-          "content": "Please check the cleaning booking for Saturday."
-        },
-        {
-          "role": "assistant",
-          "content": "Saturday's cleaning is confirmed for 11:00."
-        }
-      ]
-    },
-    {
-      "session_id": "sess_hist_06",
-      "days_ago": 50,
-      "messages": [
-        {
-          "role": "user",
-          "content": "We have a newborn, so keep it quiet please."
-        },
-        {
-          "role": "assistant",
-          "content": "Thanks, I've saved that."
-        },
-        {
-          "role": "user",
-          "content": "I travel to Pune for work every month."
+          "content": "My husband handles the car servicing."
         },
         {
           "role": "assistant",
           "content": "Understood, I'll keep that in mind."
-        },
-        {
-          "role": "user",
-          "content": "Tell the technicians there's a dog at home, ring the bell twice."
-        },
-        {
-          "role": "assistant",
-          "content": "Got it, I'll remember that."
-        },
-        {
-          "role": "user",
-          "content": "My parents visit from Mysuru every summer."
-        },
-        {
-          "role": "assistant",
-          "content": "Noted, thanks for telling me."
-        },
-        {
-          "role": "user",
-          "content": "Our cook comes at 7am daily."
-        },
-        {
-          "role": "assistant",
-          "content": "Understood, I'll keep that in mind."
-        },
-        {
-          "role": "user",
-          "content": "Who is coming for the AC?"
-        },
-        {
-          "role": "assistant",
-          "content": "CoolBreeze AC Care is scheduled for your AC servicing."
-        },
-        {
-          "role": "user",
-          "content": "Any update on my booking?"
-        },
-        {
-          "role": "assistant",
-          "content": "Your booking is confirmed. I'll message you if anything changes."
-        },
-        {
-          "role": "user",
-          "content": "Never mind, I'll do it later."
-        },
-        {
-          "role": "assistant",
-          "content": "No problem. I've left it for now."
-        },
-        {
-          "role": "user",
-          "content": "Please check the cleaning booking for Saturday."
-        },
-        {
-          "role": "assistant",
-          "content": "Saturday's cleaning is confirmed for 11:00."
-        },
-        {
-          "role": "user",
-          "content": "Can someone fix a wardrobe hinge?"
-        },
-        {
-          "role": "assistant",
-          "content": "Yes, carpenters can. Which area should I search?"
-        }
-      ]
-    },
-    {
-      "session_id": "sess_hist_07",
-      "days_ago": 40,
-      "messages": [
-        {
-          "role": "user",
-          "content": "My daughter's school ends at 3pm."
-        },
-        {
-          "role": "assistant",
-          "content": "Understood, I'll keep that in mind."
-        },
-        {
-          "role": "user",
-          "content": "Keep plumbers under 1200 rupees please."
-        },
-        {
-          "role": "assistant",
-          "content": "Thanks, I've saved that."
-        },
-        {
-          "role": "user",
-          "content": "I take the metro to work most days."
-        },
-        {
-          "role": "assistant",
-          "content": "Noted, thanks for telling me."
-        },
-        {
-          "role": "user",
-          "content": "Oh and [forgotten], keep that in mind."
-        },
-        {
-          "role": "assistant",
-          "content": "Okay, noted."
-        },
-        {
-          "role": "user",
-          "content": "Never send BreezeFix again, they came two hours late."
-        },
-        {
-          "role": "assistant",
-          "content": "Noted, thanks for telling me."
-        },
-        {
-          "role": "user",
-          "content": "Is CoolBreeze any good?"
-        },
-        {
-          "role": "assistant",
-          "content": "CoolBreeze AC Care is rated 4.5 from 176 reviews."
-        },
-        {
-          "role": "user",
-          "content": "Is CoolBreeze any good?"
-        },
-        {
-          "role": "assistant",
-          "content": "CoolBreeze AC Care is rated 4.5 from 176 reviews."
-        },
-        {
-          "role": "user",
-          "content": "Is CoolBreeze any good?"
-        },
-        {
-          "role": "assistant",
-          "content": "CoolBreeze AC Care is rated 4.5 from 176 reviews."
-        },
-        {
-          "role": "user",
-          "content": "Is CoolBreeze any good?"
-        },
-        {
-          "role": "assistant",
-          "content": "CoolBreeze AC Care is rated 4.5 from 176 reviews."
-        },
-        {
-          "role": "user",
-          "content": "What did I book last time?"
-        },
-        {
-          "role": "assistant",
-          "content": "Your last booking was an electrician visit with Sparks Electricals."
-        }
-      ]
-    },
-    {
-      "session_id": "sess_hist_08",
-      "days_ago": 30,
-      "messages": [
-        {
-          "role": "user",
-          "content": "I prefer window seats on flights."
-        },
-        {
-          "role": "assistant",
-          "content": "Understood, I'll keep that in mind."
-        },
-        {
-          "role": "user",
-          "content": "I renew my passport next year."
-        },
-        {
-          "role": "assistant",
-          "content": "Understood, I'll keep that in mind."
-        },
-        {
-          "role": "user",
-          "content": "My mother lives with us on weekends."
-        },
-        {
-          "role": "assistant",
-          "content": "Thanks, I've saved that."
-        },
-        {
-          "role": "user",
-          "content": "I work hybrid, three days in office."
-        },
-        {
-          "role": "assistant",
-          "content": "Understood, I'll keep that in mind."
-        },
-        {
-          "role": "user",
-          "content": "My office is near Koramangala."
-        },
-        {
-          "role": "assistant",
-          "content": "Noted, thanks for telling me."
-        },
-        {
-          "role": "user",
-          "content": "Never mind, I'll do it later."
-        },
-        {
-          "role": "assistant",
-          "content": "No problem. I've left it for now."
-        },
-        {
-          "role": "user",
-          "content": "Please check the cleaning booking for Saturday."
-        },
-        {
-          "role": "assistant",
-          "content": "Saturday's cleaning is confirmed for 11:00."
-        },
-        {
-          "role": "user",
-          "content": "Is CoolBreeze any good?"
-        },
-        {
-          "role": "assistant",
-          "content": "CoolBreeze AC Care is rated 4.5 from 176 reviews."
-        },
-        {
-          "role": "user",
-          "content": "Any update on my booking?"
-        },
-        {
-          "role": "assistant",
-          "content": "Your booking is confirmed. I'll message you if anything changes."
-        },
-        {
-          "role": "user",
-          "content": "Can you find a plumber this week?"
-        },
-        {
-          "role": "assistant",
-          "content": "Sure. Which day works best for you?"
-        }
-      ]
-    },
-    {
-      "session_id": "sess_hist_09",
-      "days_ago": 20,
-      "messages": [
-        {
-          "role": "user",
-          "content": "Actually, please remember never before 10am, mornings are hectic."
-        },
-        {
-          "role": "assistant",
-          "content": "Got it, I'll remember that."
-        },
-        {
-          "role": "user",
-          "content": "I've moved back, make Home the default address again."
-        },
-        {
-          "role": "assistant",
-          "content": "Thanks, I've saved that."
-        },
-        {
-          "role": "user",
-          "content": "We order from the dosa place on weekends."
-        },
-        {
-          "role": "assistant",
-          "content": "Noted, thanks for telling me."
-        },
-        {
-          "role": "user",
-          "content": "I read a lot of mystery novels."
-        },
-        {
-          "role": "assistant",
-          "content": "Understood, I'll keep that in mind."
-        },
-        {
-          "role": "user",
-          "content": "I'm trying to cut down on sugar."
-        },
-        {
-          "role": "assistant",
-          "content": "Got it, I'll remember that."
-        },
-        {
-          "role": "user",
-          "content": "What did I book last time?"
-        },
-        {
-          "role": "assistant",
-          "content": "Your last booking was an electrician visit with Sparks Electricals."
-        },
-        {
-          "role": "user",
-          "content": "Can you find a plumber this week?"
-        },
-        {
-          "role": "assistant",
-          "content": "Sure. Which day works best for you?"
-        },
-        {
-          "role": "user",
-          "content": "Never mind, I'll do it later."
-        },
-        {
-          "role": "assistant",
-          "content": "No problem. I've left it for now."
         },
         {
           "role": "user",
@@ -1341,45 +1129,61 @@
         },
         {
           "role": "user",
-          "content": "What did I book last time?"
+          "content": "Never mind, I'll do it later."
         },
         {
           "role": "assistant",
-          "content": "Your last booking was an electrician visit with Sparks Electricals."
+          "content": "No problem. I've left it for now."
+        },
+        {
+          "role": "user",
+          "content": "Is CoolBreeze any good?"
+        },
+        {
+          "role": "assistant",
+          "content": "CoolBreeze AC Care is rated 4.5 from 176 reviews."
+        },
+        {
+          "role": "user",
+          "content": "Can someone fix a wardrobe hinge?"
+        },
+        {
+          "role": "assistant",
+          "content": "Yes, carpenters can. Which area should I search?"
+        },
+        {
+          "role": "user",
+          "content": "Thursday morning, please."
+        },
+        {
+          "role": "assistant",
+          "content": "I'll look for Thursday morning slots."
+        },
+        {
+          "role": "user",
+          "content": "Thanks, that's all for now."
+        },
+        {
+          "role": "assistant",
+          "content": "You're welcome. Message me any time."
+        },
+        {
+          "role": "user",
+          "content": "Is CoolBreeze any good?"
+        },
+        {
+          "role": "assistant",
+          "content": "CoolBreeze AC Care is rated 4.5 from 176 reviews."
         }
       ]
     },
     {
-      "session_id": "sess_hist_10",
-      "days_ago": 10,
+      "session_id": "sess_hist_08",
+      "days_ago": 30,
       "messages": [
         {
           "role": "user",
-          "content": "My husband handles the car servicing."
-        },
-        {
-          "role": "assistant",
-          "content": "Got it, I'll remember that."
-        },
-        {
-          "role": "user",
-          "content": "I'm saving up for a new bicycle."
-        },
-        {
-          "role": "assistant",
-          "content": "Got it, I'll remember that."
-        },
-        {
-          "role": "user",
-          "content": "We're planning a Goa trip in December."
-        },
-        {
-          "role": "assistant",
-          "content": "Noted, thanks for telling me."
-        },
-        {
-          "role": "user",
-          "content": "Nothing after 6pm, I'm usually out in the evening."
+          "content": "AC servicing shouldn't cost more than 1500."
         },
         {
           "role": "assistant",
@@ -1387,11 +1191,137 @@
         },
         {
           "role": "user",
-          "content": "AC servicing shouldn't cost more than 1500."
+          "content": "My favourite colour is teal."
+        },
+        {
+          "role": "assistant",
+          "content": "Understood, I'll keep that in mind."
+        },
+        {
+          "role": "user",
+          "content": "Payday is the last working day."
+        },
+        {
+          "role": "assistant",
+          "content": "Thanks, I've saved that."
+        },
+        {
+          "role": "user",
+          "content": "Quarter-end weeks are crazy for me."
+        },
+        {
+          "role": "assistant",
+          "content": "Got it, I'll remember that."
+        },
+        {
+          "role": "user",
+          "content": "Prices went up, so for plumbers up to 1500 is okay now."
+        },
+        {
+          "role": "assistant",
+          "content": "Got it, I'll remember that."
+        },
+        {
+          "role": "user",
+          "content": "Never send BreezeFix again, they came two hours late."
+        },
+        {
+          "role": "assistant",
+          "content": "Understood, I'll keep that in mind."
+        },
+        {
+          "role": "user",
+          "content": "Tell the technicians there's a dog at home, ring the bell twice."
         },
         {
           "role": "assistant",
           "content": "Noted, thanks for telling me."
+        },
+        {
+          "role": "user",
+          "content": "Can someone fix a wardrobe hinge?"
+        },
+        {
+          "role": "assistant",
+          "content": "Yes, carpenters can. Which area should I search?"
+        },
+        {
+          "role": "user",
+          "content": "Thursday morning, please."
+        },
+        {
+          "role": "assistant",
+          "content": "I'll look for Thursday morning slots."
+        },
+        {
+          "role": "user",
+          "content": "How early should I book?"
+        },
+        {
+          "role": "assistant",
+          "content": "A few days ahead is safest; weekends fill up first."
+        }
+      ]
+    },
+    {
+      "session_id": "sess_hist_09",
+      "days_ago": 20,
+      "messages": [
+        {
+          "role": "user",
+          "content": "I really prefer filter coffee over instant."
+        },
+        {
+          "role": "assistant",
+          "content": "Thanks, I've saved that."
+        },
+        {
+          "role": "user",
+          "content": "I do yoga in the mornings."
+        },
+        {
+          "role": "assistant",
+          "content": "Noted, thanks for telling me."
+        },
+        {
+          "role": "user",
+          "content": "They can use visitor parking in the basement."
+        },
+        {
+          "role": "assistant",
+          "content": "Understood, I'll keep that in mind."
+        },
+        {
+          "role": "user",
+          "content": "I prefer window seats on flights."
+        },
+        {
+          "role": "assistant",
+          "content": "Understood, I'll keep that in mind."
+        },
+        {
+          "role": "user",
+          "content": "Fridays I finish early."
+        },
+        {
+          "role": "assistant",
+          "content": "Got it, I'll remember that."
+        },
+        {
+          "role": "user",
+          "content": "Our cook comes at 7am daily."
+        },
+        {
+          "role": "assistant",
+          "content": "Got it, I'll remember that."
+        },
+        {
+          "role": "user",
+          "content": "Is CoolBreeze any good?"
+        },
+        {
+          "role": "assistant",
+          "content": "CoolBreeze AC Care is rated 4.5 from 176 reviews."
         },
         {
           "role": "user",
@@ -1403,35 +1333,105 @@
         },
         {
           "role": "user",
-          "content": "Do they bring their own tools?"
+          "content": "Do I need to be home for the visit?"
         },
         {
           "role": "assistant",
-          "content": "Usually yes. I can note it in the booking if needed."
+          "content": "Usually yes, or someone who can let them in."
         },
         {
           "role": "user",
-          "content": "Any update on my booking?"
+          "content": "Is CoolBreeze any good?"
         },
         {
           "role": "assistant",
-          "content": "Your booking is confirmed. I'll message you if anything changes."
+          "content": "CoolBreeze AC Care is rated 4.5 from 176 reviews."
+        }
+      ]
+    },
+    {
+      "session_id": "sess_hist_10",
+      "days_ago": 10,
+      "messages": [
+        {
+          "role": "user",
+          "content": "I travel to Pune for work every month."
+        },
+        {
+          "role": "assistant",
+          "content": "Thanks, I've saved that."
         },
         {
           "role": "user",
-          "content": "What did I book last time?"
+          "content": "We have a newborn, so keep it quiet please."
         },
         {
           "role": "assistant",
-          "content": "Your last booking was an electrician visit with Sparks Electricals."
+          "content": "Thanks, I've saved that."
         },
         {
           "role": "user",
-          "content": "Any update on my booking?"
+          "content": "I have standups at 9:30 every weekday."
         },
         {
           "role": "assistant",
-          "content": "Your booking is confirmed. I'll message you if anything changes."
+          "content": "Thanks, I've saved that."
+        },
+        {
+          "role": "user",
+          "content": "I read a lot of mystery novels."
+        },
+        {
+          "role": "assistant",
+          "content": "Understood, I'll keep that in mind."
+        },
+        {
+          "role": "user",
+          "content": "I'm saving up for a new bicycle."
+        },
+        {
+          "role": "assistant",
+          "content": "Understood, I'll keep that in mind."
+        },
+        {
+          "role": "user",
+          "content": "My son is allergic to peanuts."
+        },
+        {
+          "role": "assistant",
+          "content": "Got it, I'll remember that."
+        },
+        {
+          "role": "user",
+          "content": "I get carsick on long drives."
+        },
+        {
+          "role": "assistant",
+          "content": "Got it, I'll remember that."
+        },
+        {
+          "role": "user",
+          "content": "I'm terrible with plants."
+        },
+        {
+          "role": "assistant",
+          "content": "Thanks, I've saved that."
+        },
+        {
+          "role": "user",
+          "content": "I'm on calls most afternoons."
+        },
+        {
+          "role": "assistant",
+          "content": "Understood, I'll keep that in mind."
+        },
+        {
+          "role": "user",
+          "content": "Can you find a plumber this week?"
+        },
+        {
+          "role": "assistant",
+          "content": "Sure. Which day works best for you?"
         }
       ]
     }

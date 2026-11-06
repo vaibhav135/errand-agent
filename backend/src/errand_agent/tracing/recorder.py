@@ -50,7 +50,8 @@ EVENT_TYPES = LIFECYCLE_TYPES | {
     "state_transition",
     "model_call",
     "context_sent",
-    "tool_call",
+    "tool_call",  # a provider call (GuardedToolEnv)
+    "agent_tool",  # one of the agent's own tools, as the model called it
     "approval",
     "memory",
     "profile",

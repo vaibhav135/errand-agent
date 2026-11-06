@@ -8,7 +8,7 @@ from errand_agent.core.clock import FakeClock
 from errand_agent.core.ids import SequentialIdGen
 from errand_agent.memory.selection import select_memories
 from errand_agent.memory.store import MemoryStore
-from errand_agent.memory.tokens import estimate_tokens
+from errand_agent.memory.tokens import estimate_json_tokens, estimate_tokens
 from errand_agent.store.db import connect
 from errand_agent.store.migrate import migrate, migrations_for
 
@@ -37,8 +37,9 @@ def say(store: MemoryStore, key, value, quote: str, **kw):  # type: ignore[no-un
 
 def test_token_estimate_is_deterministic_and_pessimistic() -> None:
     assert estimate_tokens("") == 0
-    assert estimate_tokens("abcdefg") == 2  # 7 chars / 3.5
-    assert estimate_tokens("x" * 400) == 115  # ~4 chars/token is typical: we overestimate
+    assert estimate_tokens("abcdefg") == 3  # 7 chars / 2.4, rounded up
+    assert estimate_tokens("x" * 480) == 200  # measured 2.6-3.0 chars/token: we overestimate
+    assert estimate_json_tokens("x" * 380) == 200  # JSON data is denser: 1.9 (measured 2.04)
 
 
 # --- what never reaches the model -------------------------------------------------

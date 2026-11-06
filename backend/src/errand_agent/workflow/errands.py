@@ -288,6 +288,26 @@ class ErrandStore:
             raise KeyError(f"no errand {errand_id!r}")
         return row["user_id"]
 
+    def set_options(self, errand_id: str, options_json: str) -> Errand:
+        """Remember the ranked options shown to the user (JSON of RankedOptions)."""
+        with atomic(self._conn):
+            self._conn.execute(
+                "UPDATE errands SET options = ?, updated_at = ? WHERE errand_id = ?",
+                (options_json, utc_text(self._clock.now()), errand_id),
+            )
+        return self.get(errand_id)
+
+    def options_json(self, errand_id: str) -> str | None:
+        row = self._conn.execute(
+            "SELECT options FROM errands WHERE errand_id = ?", (errand_id,)
+        ).fetchone()
+        return row["options"] if row else None
+
+    def latest_open(self, session_id: str) -> Errand | None:
+        """The session's most recent errand that hasn't finished, if any."""
+        open_errands = self.open_errands(session_id)
+        return open_errands[-1] if open_errands else None
+
     def set_booking(self, errand_id: str, booking_id: str) -> Errand:
         with atomic(self._conn):
             self._conn.execute(

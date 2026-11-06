@@ -14,6 +14,7 @@ from errand_agent.workflow.approvals import (
     ApprovalError,
     ApprovalStore,
     fingerprint,
+    is_explicit_no,
     is_explicit_yes,
 )
 from errand_agent.workflow.errands import ErrandStore
@@ -245,6 +246,25 @@ def test_rolled_back_consume_leaves_the_approval_granted(
         "yes, book it",
         "approve",
         "do it",
+        # how people actually type it
+        "yup",
+        "Yeah",
+        "yesss",
+        "okkk",
+        "ok",
+        "sure",
+        "sounds good",
+        "go for it",
+        # Hindi / Hinglish
+        "haan",
+        "haan ji",
+        "theek hai",
+        "Thik hai!",
+        "book kar do",
+        # emoji, with or without a skin tone
+        "👍",
+        "👍🏽",
+        "✅",
     ],
 )
 def test_explicit_yes(text: str) -> None:
@@ -255,9 +275,14 @@ def test_explicit_yes(text: str) -> None:
     "text",
     [
         "yes but make it 11am",
-        "ok",
-        "sure",
         "maybe",
+        "yo",  # usually a greeting: a miss costs one extra tap, a false yes books
+        "ha",  # usually laughter
+        "haha",
+        "yeah no",
+        "ok?",
+        "👍 but cheaper",
+        "\ufe0f",  # an invisible modifier on its own
         "no",
         "not yes",
         "yes no",
@@ -268,6 +293,25 @@ def test_explicit_yes(text: str) -> None:
 )
 def test_not_an_explicit_yes(text: str) -> None:
     assert not is_explicit_yes(text)
+
+
+# --- typed "no" ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["no", "No.", "nope", "nah", "nahh", "nahi", "no thanks", "not now", "never mind", "👎", "❌"],
+)
+def test_explicit_no(text: str) -> None:
+    assert is_explicit_no(text)
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["no, make it 11am", "no?", "not sure", "nothing", "yes", "neit leave it", ""],
+)
+def test_not_an_explicit_no(text: str) -> None:
+    assert not is_explicit_no(text)
 
 
 def test_typed_yes_resolves_only_a_single_pending_approval(

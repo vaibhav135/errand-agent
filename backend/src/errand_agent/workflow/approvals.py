@@ -1,8 +1,8 @@
 """Approval gate: the user's agreement to one exact action, enforced in code.
 
 What: `ApprovalDetails` (action + material details), `fingerprint()`,
-      `ApprovalStore` (request / grant / reject / invalidate / consume) and
-      `is_explicit_yes()` for typed confirmations.
+      `ApprovalStore` (request / grant / reject / invalidate / consume), and
+      `is_explicit_yes()` / `is_explicit_no()` for typed answers.
 
 Why:  The assignment: booking, cancellation and rescheduling need explicit user
       confirmation of the exact action and material details; approval is enforced
@@ -26,6 +26,13 @@ How:  - fingerprint = sha256 over canonical JSON of (action, provider_id, slot a
       - Typed "yes": the whole message must be an explicit affirmative, and it
         resolves only when exactly one approval is pending in the session. The
         model never decides whether the user agreed.
+      - The vocabulary is wide (casual, Hinglish, emoji) because people answer in
+        their own words, but it is still a fixed list matched in code. The two
+        mistakes cost very different amounts: a missed yes falls through to the
+        model, which can't approve, so the user taps Approve; a false yes books
+        something. So doubtful words stay out ("yo" is a greeting, "ha" a laugh).
+      - Typed "no" works the same way; declining can only *remove* authority, so
+        the model may also decline fuzzier phrasings (agent tool `decline_pending`).
 """
 
 import hashlib
@@ -46,26 +53,56 @@ Action = Literal["book", "reschedule", "cancel"]
 ApprovalStatus = Literal["pending", "granted", "rejected", "invalidated", "consumed"]
 Via = Literal["button", "typed"]
 
-_EXPLICIT_YES = frozenset(
-    {
-        "yes",
-        "y",
-        "yes please",
-        "yep",
-        "confirm",
-        "confirmed",
-        "i confirm",
-        "go ahead",
-        "yes go ahead",
-        "book it",
-        "yes book it",
-        "please book it",
-        "approve",
-        "approved",
-        "do it",
-        "yes do it",
-    }
-)
+_YES_WORDS = (
+    # plain
+    "yes", "y", "yes please", "yep", "yup", "yeah", "yea", "ya", "yah", "sure", "sure thing",
+    "ok", "okay", "okie", "k", "absolutely", "perfect", "sounds good",
+    # explicit
+    "confirm", "confirmed", "i confirm", "approve", "approved",
+    "go ahead", "yes go ahead", "ok go ahead", "go for it", "let's do it",
+    "book it", "yes book it", "ok book it", "please book it", "do it", "yes do it", "ok do it",
+    # Hindi / Hinglish
+    "haan", "haan ji", "ha ji", "ji haan", "theek hai", "thik hai", "chalo",
+    "kar do", "haan kar do", "book kar do",
+)  # fmt: skip
+_NO_WORDS = (
+    "no", "n", "nope", "nah", "na", "no thanks", "no thank you", "not now",
+    "don't", "do not", "never mind", "nevermind", "forget it", "leave it", "skip it",
+    "not interested",
+    # Hindi / Hinglish
+    "nahi", "nai", "mat karo", "rehne do",
+)  # fmt: skip
+_YES_EMOJI = frozenset("👍✅👌🆗")
+_NO_EMOJI = frozenset("👎❌🙅")
+# Skin tones, variation selectors and joiners: "👍🏽" and "✅\ufe0f" mean what the bare
+# emoji means.
+_EMOJI_MODIFIERS = re.compile("[\U0001f3fb-\U0001f3ff\ufe0f\u200d\u2640\u2642]")
+
+
+def _normalise(text: str) -> str:
+    """Lowercase words only, single spaces, and repeated letters collapsed.
+
+    Collapsing runs of the same letter ("yesss" -> "yes", "okkk" -> "ok") is applied to
+    the vocabulary too ("book it" -> "bok it" on both sides), so one entry covers every
+    stretched spelling without a fuzzy match that could turn a near-miss into a yes.
+    """
+    words = re.sub(r"[^\w\s]", " ", text.lower().replace("'", ""))
+    words = re.sub(r"(\w)\1+", r"\1", words)
+    return re.sub(r"\s+", " ", words).strip()
+
+
+_EXPLICIT_YES = frozenset(_normalise(w) for w in _YES_WORDS)
+_EXPLICIT_NO = frozenset(_normalise(w) for w in _NO_WORDS)
+
+
+def _is_whole_answer(text: str, words: frozenset[str], emoji: frozenset[str]) -> bool:
+    stripped = text.strip()
+    if not stripped or stripped.endswith("?"):  # a question is not an answer
+        return False
+    symbols = [c for c in _EMOJI_MODIFIERS.sub("", stripped) if not c.isspace()]
+    if symbols and all(c in emoji for c in symbols):  # all([]) is True
+        return True
+    return _normalise(stripped) in words  # anything extra disqualifies it
 
 
 class ApprovalError(Exception):
@@ -113,15 +150,16 @@ def fingerprint(details: ApprovalDetails) -> str:
 def is_explicit_yes(text: str) -> bool:
     """True only if the *whole* message is an explicit affirmative.
 
-    Punctuation at the ends and repeated spaces are ignored, but a question mark
-    means it isn't a confirmation, and anything extra ("yes but make it 11am")
-    disqualifies it: a conditional yes is not agreement to the exact action.
+    Punctuation, case, repeated letters and emoji modifiers are ignored, but a
+    question mark means it isn't a confirmation, and anything extra ("yes but make it
+    11am") disqualifies it: a conditional yes is not agreement to the exact action.
     """
-    stripped = text.strip()
-    if stripped.endswith("?"):
-        return False
-    normalised = re.sub(r"\s+", " ", re.sub(r"[^\w\s]", " ", stripped.lower())).strip()
-    return normalised in _EXPLICIT_YES
+    return _is_whole_answer(text, _EXPLICIT_YES, _YES_EMOJI)
+
+
+def is_explicit_no(text: str) -> bool:
+    """True only if the *whole* message is a plain decline (same rules as yes)."""
+    return _is_whole_answer(text, _EXPLICIT_NO, _NO_EMOJI)
 
 
 class ApprovalStore:

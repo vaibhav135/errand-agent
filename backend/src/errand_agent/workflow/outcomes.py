@@ -198,6 +198,7 @@ def for_limit(exc: LimitExceeded) -> RunOutcome:
         "tool_calls": "too many steps",
         "model_turns": "too many back-and-forths",
         "wall_clock": "it was taking too long",
+        "context_tokens": "it needed more information at once than I can handle",
     }[exc.limit]
     return RunOutcome(
         kind="limit_reached",

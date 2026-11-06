@@ -3,7 +3,8 @@
 How the Errand Agent is put together: one definition of each main component (what it
 is, why it exists, how it works). Cross-cutting concepts live here; implementation
 detail lives in each module's docstring, linked below. **Updated in the same commit as
-the component it describes.**
+the component it describes.** Why the less obvious choices were made, and what was
+rejected, is recorded in [DECISIONS.md](DECISIONS.md).
 
 ## Core principle: the LLM proposes, the workflow decides
 
@@ -26,9 +27,9 @@ the enforcement mechanism. Each layer may import only the layers listed:
 | `mocks/` | `core`, `store`, `providers` (the "external world" knows nothing of the agent) | Phase 2 |
 | `memory/` | `core`, `store`, `tracing`, `providers` (service vocabulary) | Phase 4 |
 | `workflow/` | `core`, `store`, `tracing`, `memory`, `providers` | Phase 3 |
-| `proactive/` | `core`, `store`, `tracing`, `memory`, `providers`, `workflow` | Phase 6 |
+| `proactive/` | `core`, `store`, `tracing`, `memory`, `providers`, `workflow` | Phase 7 |
 | `agent/` | `core`, `store`, `tracing`, `memory`, `providers`, `workflow` | Phase 5 |
-| `api/` | everything | Phase 7 |
+| `api/` | everything | Phase 6 |
 
 If every layer obeys its own list, indirect violations (e.g. `workflow → memory →
 agent`) are impossible too. `proactive` and `agent` don't import each other: the monitor
@@ -70,18 +71,22 @@ Against a real provider the clocks would differ, so the workflow treats the prov
 - **What:** `Settings` (pydantic-settings), read once from `ERRAND_*` env vars / `.env`.
 - **Why:** One validated place for configuration; bad values fail at startup.
 - **How:** `data_dir` (default `var/`) is the root; DB paths and `trace_dir` derive from
-  it unless set individually. `model` is `None` until chosen. Tests pass
-  `_env_file=None` so a developer's `.env` never leaks in.
+  it unless set individually. Models default to the cheaper good ones, so one Anthropic
+  key is enough to start; `default_model_notice()` names any defaults in use (the chat
+  prints it at startup), so the choice is never silent. "Chosen" means it came from the
+  environment / `.env` (pydantic's `model_fields_set`); a blank entry counts as not
+  chosen. Tests pass `_env_file=None` so a developer's `.env` never leaks in.
 
 | Variable | Default |
 |---|---|
 | `ERRAND_DATA_DIR` | `var` (relative to `backend/`, where `make` runs) |
 | `ERRAND_AGENT_DB_PATH` / `ERRAND_MOCK_DB_PATH` / `ERRAND_TRACE_DIR` | under `data_dir` |
-| `ERRAND_MODEL` | unset (e.g. `anthropic:claude-sonnet-5-5`) |
+| `ERRAND_MODEL` | `anthropic:claude-sonnet-5-5` ($2 / $10 per M tokens: plans multi-step tool use well at half Opus's price; `test` = offline TestModel) |
+| `ERRAND_REVIEW_MODEL` | follows an explicitly set `ERRAND_MODEL` (one key of any provider is enough); otherwise `anthropic:claude-haiku-5-5` ($0.10 / $0.50: it only picks fixed labels) |
 | `ERRAND_MOCK_SEED` | `42` |
 | `ERRAND_MAX_MODEL_TURNS` / `ERRAND_MAX_TOOL_CALLS` / `ERRAND_MAX_RUN_SECONDS` | `8` / `20` / `60` (per-run hard limits) |
 | `ERRAND_RECONCILE_INTERVAL_SECONDS` | `30` (background reconciler; `0` disables the loop) |
-| `ERRAND_CONTEXT_TOKEN_BUDGET` / `ERRAND_MEMORY_TOKEN_BUDGET` | `6000` / `600` (estimated tokens per model turn) |
+| `ERRAND_CONTEXT_TOKEN_BUDGET` / `ERRAND_MEMORY_TOKEN_BUDGET` | `7500` / `600` (estimated tokens per model request, calibrated never to undercount; 7,500 derived in DECISIONS D3) |
 | `ERRAND_SEED_DEMO_USER` | `true` (load the generated demo user into an empty DB) |
 | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | unset; standard names, no prefix |
 
@@ -119,6 +124,13 @@ handlers in a thread pool). Turning the guard off would let two threads interlea
 transactions on one connection; with it on, a mistake fails loudly. Tests that use
 services directly run the app lifespan in their own loop (`app.router.lifespan_context`).
 
+**Tests close what they open** (BUG-9): `tests/conftest.py` tracks every
+`sqlite3.connect` in a test and closes those connections when the test ends (ones made
+in the app's own thread under `TestClient` are closed by the app's shutdown). Left to
+garbage collection they peaked at ~300 open files, over macOS's default limit of 256;
+now ~23. `make test` runs under `ulimit -n 256` so a future leak fails the gate in
+every environment, not only on a default Mac.
+
 ### App wiring: `api/app.py`
 - **What:** `create_app(settings, clock=, ids=)`; its lifespan builds `Services`
   (settings, clock, ids, `agent.db` connection, mock world, tracer) on
@@ -128,7 +140,29 @@ services directly run the app lifespan in their own loop (`app.router.lifespan_c
   `FakeClock` and temp paths.
 - **How:** startup migrates `agent.db` and opens the mock world (migrated and seeded
   once); restarts reuse the same files. The dev server uses env/`.env` settings, the
-  system clock and random ids.
+  system clock and random ids. `build_handler(services)` makes the `MessageHandler`
+  (models and budgets from Settings) for both the chat CLI and the API, so they can't
+  drift; it is separate from `build_services` so the app starts without a model key.
+
+### Chat CLI: `api/chat.py` (`make chat`)
+- **What:** a read-reply loop for the demo user over the same handler, databases and
+  traces as the web API; `render_card()` draws an approval card.
+- **Why:** to see the real model use the tools while the only moving parts are the agent
+  and the workflow (one suspect per surprise), and to retry a prompt change in seconds.
+- **How:** standard library only (`input()` + `readline` for line editing and history).
+  Startup runs one reconcile pass, then starts a new session. The card is drawn from the
+  approval's stored details, never the model's text. Each reply ends with a footer from
+  the run's `run_finished` event: outcome · model calls · tokens · cost · seconds ·
+  trace file path (dimmed only on a real terminal). No model configured → what to set,
+  exit code 2. Anything starting with `/` is a chat command handled locally (`/quit`,
+  `/exit`; others get "Unknown command"), never sent to the model or saved (BUG-4).
+  `/memories` lists saved facts and the suggestions awaiting review; `/confirm N` /
+  `/reject N` decide one, in code (D2); hints show a real number ("e.g. /confirm 40"),
+  and a bare `/confirm` lists the choices without deciding anything. Suggestions a tool
+  asked to show are drawn in a box after the reply, like an approval card. A
+  "working…" line shows while a turn runs, and PydanticAI's startup banner is off
+  (`PYDANTIC_AI_NO_BANNER=1` unless already set). Ctrl+C leaves quietly, even mid-turn;
+  a side effect in flight is settled by the reconcile pass at the next start.
 
 ### Migrations: `store/migrate.py`
 - **What:** `migrate(conn, directory, clock)` applies `NNNN_name.sql` files in order.
@@ -314,7 +348,9 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
   bounds it). `get_booking_status` is **budget-exempt** (counted and traced, never
   blocked): after a side effect, finding out what happened must always be possible;
   the executor caps it itself. A limit hit emits `limit_hit` and raises
-  `LimitExceeded`, which ends the *run* with a clear outcome, never the errand.
+  `LimitExceeded`, which ends the *run* with a clear outcome, never the errand. The
+  context guard reports a request that can't fit the context budget through the same
+  meter (`refuse_context`, limit `context_tokens`).
 
 ### Ranking: `workflow/ranking.py`
 - **What:** `rank_options(providers, requirements)` → the top 3 options, each with up to
@@ -331,7 +367,7 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
 
 ### Approval gate: `workflow/approvals.py`
 - **What:** `ApprovalDetails`, `fingerprint()`, `ApprovalStore` (request / grant /
-  reject / invalidate / consume), `is_explicit_yes()`.
+  reject / invalidate / consume), `is_explicit_yes()` / `is_explicit_no()`.
 - **Why:** booking, cancelling and rescheduling need explicit confirmation of the exact
   action and material details, enforced in code; any change to provider, slot or price
   invalidates it.
@@ -345,12 +381,23 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
 | `grant` | `pending` only, and only with the fingerprint the user was shown |
 | `consume` | inside the executor's transaction with the idempotency key; `granted` only; current details must still match; single use (repeated confirmations can't run twice). Writes nothing when refusing; the caller invalidates as a separate step |
 | typed "yes" | whole message must be an explicit affirmative; resolves only when exactly one approval is pending. The model never decides whether the user agreed |
+| vocabulary | wide (yup, yesss, ok, haan ji, theek hai, 👍…) but a fixed list matched in code: case, punctuation, emoji modifiers and repeated letters are normalised on both sides ("yesss" = "yes"); a `?` or anything extra disqualifies. Doubtful words stay out ("yo", "ha"): a missed yes costs one tap, a false yes books something |
+| typed "no" | same rules (no, nah, nahi, not now, 👎…). Declining only removes authority, so the model may also decline fuzzier phrasing via `decline_pending` |
 
   **Hash, not signature (deliberate):** sha256 has no key, so the fingerprint detects
   differences but isn't tamper-proof. The trust boundary is that only the workflow
   creates approvals; users can only grant or reject one. An HMAC (keyed hash) would be
   the right addition if approvals ever travelled outside the system, e.g. as
   "click to approve" links in email or SMS.
+
+### Decline: `workflow/decline.py`
+- **What:** `decline_pending(conn, approvals, errands, session_id, run=)`.
+- **Why:** "no" must be as reliable as "yes"; the handler's typed-no fast path and the
+  model's `decline_pending` tool share one operation.
+- **How:** rejects *every* pending approval in the session (the model can't aim it at
+  one card) and moves each errand back (`approval_rejected`: book → comparing, change →
+  collecting), in one transaction. Nothing is booked, cancelled or charged. The provider
+  hold isn't released (the contract has no release call); it expires on its own.
 
 ### Booking flow: `workflow/booking.py`
 - **What:** `BookingFlow.propose(errand, option, slot)` and
@@ -464,7 +511,11 @@ User information comes in three kinds, kept in three places:
   starting at 09:00 IST or later. Cancellations are ignored and there is no "avoid"
   rule (inferring dislike is too error-prone). Every suggestion goes through
   `propose_inferred`, landing as `pending_confirmation`; forgotten, rejected or known
-  facts are skipped, so repeated runs create nothing new.
+  facts are skipped, so repeated runs create nothing new. **Explicit beats inferred**
+  (BUG-6): nothing is suggested for a key the user has stated themselves, so an old
+  9:00 booking can't produce "earliest start 09:00?" after they said "never before
+  10am". The seeded user is a fixed point: running inference over them adds nothing.
+  Suggestions reach the user only through code (D2).
 
 ### Profile: `memory/profile.py`
 - **What:** `ProfileStore`: name, phone, email and labelled addresses (one default), plus
@@ -503,7 +554,8 @@ User information comes in three kinds, kept in three places:
 ### Memory selection: `memory/selection.py`, `memory/tokens.py`
 - **What:** `select_memories(memories, service=, budget_tokens=)` → included memories,
   every excluded one **with its reason**, the rendered text and its token count.
-  `estimate_tokens(text)` = ceil(chars / 3.5).
+  `estimate_tokens(text)` = ceil(chars / 2.4); `estimate_json_tokens(text)` =
+  ceil(chars / 1.9) for tool arguments and results; `TOOL_USE_OVERHEAD_TOKENS` = 350.
 - **Why:** "only relevant, current preferences may reach the model; forgotten facts and
   unconfirmed inferred facts never". Deciding it in code makes it provable per turn.
 - **How:**
@@ -515,31 +567,64 @@ User information comes in three kinds, kept in three places:
 | active and relevant | included by priority (provider, time window, budget, default address, notes), newest first, while it fits; else `over_budget` |
 
   Each line says where the fact came from ("you told me" / "inferred, you confirmed").
-  The token estimate is deterministic (offline evals) and pessimistic: English averages
-  about 4 characters per token, so packets built to it stay under the real budget.
+  The token estimate is deterministic (offline evals) and **calibrated never to
+  undercount** (BUG-7): `make calibrate` measures exact sample texts with Anthropic's
+  `count_tokens` into `tests/data/token_calibration.json` (claude-sonnet-5-5: text
+  2.58-3.00 chars/token, JSON data 2.04, a 321-token hidden tool-use prompt), and the
+  ratios sit ~7% below the lowest measured value. A test fails if any recorded sample
+  is estimated below its real count; `model_call` traces keep showing estimate vs real,
+  so re-calibrate after a model change. Claude's tokenizer isn't published, so an
+  exact local count isn't possible; for OpenAI models `tiktoken` could be (not needed
+  yet, see D3).
 
 ### Context builder: `workflow/context.py`
 - **What:** `ContextBuilder.build(...)` → `ContextPacket` (system, state, memories,
   messages, per-section tokens) plus a `context_sent` trace event every turn.
 - **Why:** a fixed budget; only relevant, current preferences; never forgotten or
   unconfirmed facts; never profile PII; and a per-turn log that tests can check.
-- **How:** filled in priority order until `ERRAND_CONTEXT_TOKEN_BUDGET` (6000) is used:
+- **How:** `ERRAND_CONTEXT_TOKEN_BUDGET` (7,500, derived from measured needs: D3)
+  covers **everything a request carries** (decision D1 in [DECISIONS.md](DECISIONS.md),
+  after BUG-3). Filled in priority order:
 
 ```
-1. system prompt                                         always
-2. state: today (IST), errand kind/state, requirements,  always (structured, from the DB,
-   still needed / ask once, pending approval,             so old turns can be dropped
-   address labels+areas, has phone/email                   without an LLM summary)
-3. relevant memories                                     ≤ ERRAND_MEMORY_TOKEN_BUDGET (600)
-4. recent conversation, newest first while it fits       then restored to chronological
+1. tool definitions (16 schemas) + the provider's         always  ~2,860 estimated
+   hidden tool-use prompt                                         (~2,630 real)
+2. system prompt                                          always
+3. state: today (IST), errand kind/state, requirements,   always  (structured, from the DB,
+   still needed / ask once, pending approval,                     so old turns can be
+   address labels+areas, has phone/email                          dropped without a summary)
+4. relevant memories                                      ≤ ERRAND_MEMORY_TOKEN_BUDGET (600)
+5. working room for the run's own tool calls / results    1,500 reserved, never filled here
+6. the CURRENT SESSION's conversation, newest first       whatever is left; restored to
+                                                          chronological order
 ```
 
-  If 1 + 2 alone don't fit, `ContextOverflow` is raised instead of truncating the system
-  prompt. `context_sent` records the budget, tokens per section, included memory ids,
-  every excluded id with its reason, messages included and dropped, and the state and
-  memory text (no message bodies; they're in `messages`). Tests prove forgotten and
-  pending values, and the user's name, phone, email and street, appear nowhere in the
-  packet.
+  Earlier sessions are **never sent**: memories, state and tools carry continuity
+  across sessions. `messages_out_of_scope` counts them, so the trace proves the long
+  seeded conversation stays out. If 1-3 alone don't fit, `ContextOverflow` is raised
+  instead of truncating the system prompt. `context_sent` records the budget (total,
+  memories, working), tokens per section including `tools`, included memory ids, every
+  excluded id with its reason, messages included / dropped / out of scope, and the
+  state and memory text (no message bodies; they're in `messages`). Tests prove
+  forgotten and pending values, and the user's name, phone, email and street, appear
+  nowhere in the packet. Within a run, the context guard (below) keeps every later
+  request inside the same budget.
+
+### Context guard: `agent/budget.py`
+- **What:** `guard_context`, a PydanticAI `ProcessHistory` capability on the
+  orchestrator, run before **every** model request; `tool_definition_tokens()`.
+- **Why:** the ContextBuilder sizes what a run starts with, but each tool call and
+  result is appended to the messages, so later requests grow (BUG-3: 2,457 → 5,062
+  against 4,500). The cap must hold for every request.
+- **How:** size = tool definitions + instructions (fixed, set on the deps by the
+  handler) + every message part. Over budget → **observation masking**: this run's
+  oldest tool results become `[result omitted to fit the context budget]`, oldest
+  first, never the newest ones the model is about to read; masks persist for the rest
+  of the run. Still over → `BudgetMeter.refuse_context` traces `limit_hit:
+  context_tokens` and the run ends `limit_reached`; the oversized request is never
+  sent. Each request's estimate goes into `model_call.estimated_input_tokens`, next to
+  the provider's real count. `async` because PydanticAI runs a sync processor in a
+  worker thread, which our SQLite connections refuse.
 
 ### Demo-user seed: `memory/seedgen.py`, `memory/seed.py`
 - **What:** a deterministic generator (`make seed-data`) writes the committed
@@ -554,6 +639,11 @@ User information comes in three kinds, kept in three places:
   quote appears in a user message, forgotten facts only as `[forgotten]`, PII only as
   `[phone saved]` etc.) and every value passes the store's validation. A test fails if
   the committed file differs from the generator's output.
+  **One consistent story** (BUG-2): each fact is said in the session nearest the day it
+  was learned, oldest first, so a correction always follows what it corrects. Bookings
+  have one source of truth, the mock world's history (`mocks/data/providers.json`): the
+  seeded usual-provider inferences are exactly what the inference rules derive from it
+  (a test runs the rules to check), and the canned small talk states no booking facts.
 
 ### Run outcomes: `workflow/outcomes.py`
 - **What:** `RunOutcome` (kind, user-facing message, optional booking / approval card),
@@ -668,6 +758,125 @@ stateDiagram-v2
     abandoned --> [*]
 ```
 
+### Agent models: `agent/models.py`
+- **What:** `main_model(settings)` / `review_model(settings)` build the PydanticAI model
+  from `ERRAND_MODEL` / `ERRAND_REVIEW_MODEL` (`<provider>:<model>`).
+- **Why:** keys in `backend/.env` reach the provider only if passed explicitly
+  (pydantic-settings doesn't export them), and a missing key should fail early, naming
+  the variable to set.
+- **How:** `anthropic:` → `AnthropicModel`; `openai:` / `openai-responses:` →
+  `OpenAIResponsesModel`; `openai-chat:` → `OpenAIChatModel`; `google:` → a clear "SDK not
+  installed" error; `test` → PydanticAI's offline `TestModel`. Which model each role
+  uses is decided in Settings (see above). The test suite sets `ALLOW_MODEL_REQUESTS = False`, so no test can
+  call a real API.
+
+### Agent tools: `agent/tools.py`, `agent/deps.py`, `agent/orchestrator.py`
+- **What:** the orchestrator `Agent[AgentDeps, str]` and its tools, all workflow
+  commands: `update_requirements`, `search_and_compare`, `propose_booking`,
+  `decline_pending`, `get_reviews_summary`, `find_my_bookings`, `available_slots`,
+  `start_cancel`, `start_reschedule`, `remember`, `list_memories`, `forget_memory`,
+  `show_suggestions`, `correct_memory`, `update_profile`, `add_address`.
+- **Why:** the model understands; the workflow decides. **No tool books, cancels,
+  reschedules, holds or approves** (a structural test lists the tool names); the
+  furthest the model can get is an approval card. Its one approval-related tool,
+  `decline_pending`, can only take authority away.
+- **How:** `AgentDeps` bundles one run's stores, the guarded provider env, trace, meter,
+  the user and **their current message** (provenance for `remember` / `update_profile`).
+  Invalid input raises `ModelRetry` with a readable reason (past date, unlisted slot,
+  missing details, a quote the user never said). Options are saved on the errand
+  (`options` column) so "option 2" is stable, and only listed slots can be proposed.
+  Memory and booking tools only touch the user's own records; profile tools return saved
+  field names, never values. **Suggestions never reach the model** (D2 in
+  [DECISIONS.md](DECISIONS.md), BUG-5): `list_memories` returns the active facts that
+  matter for bookings (time window, budgets, providers, address, home-service notes),
+  a *count* of personal notes (listed only with `include_personal_notes`, when the user
+  asks: ~3,470 -> ~780 tokens for the demo user, D3) and how many suggestions await
+  review; `show_suggestions` makes *code* show them next to the
+  reply (the model learns only how many); the user confirms or rejects in code
+  (`/confirm`, `/reject`; buttons in the web UI). Every tool call is traced as an
+  `agent_tool` event (`agent/tool_trace.py`, a `wrap_tool_execute` capability): the
+  arguments as the model sent them, the result, status ok / retry / error and latency;
+  for `update_profile` / `add_address` only argument *names*, since their values are
+  PII. **Lean definitions** (D3): tool schemas ship with every request, so
+  `LeanToolJsonSchema` writes an optional `x: T | None = None` as plain `T` (not
+  required) instead of an `anyOf` with a `null` branch, and descriptions stay short
+  (rules live in the system prompt); validation still uses the real types. A test pins
+  every tool's parameter names, types and required flags, and caps the total
+  (2,719 -> 2,310 real tokens). Tests drive the agent offline with a scripted `FunctionModel`
+  and assert database effects. Note for PydanticAI 2.66: a tool's `ModelRetry` is recorded
+  as a `ToolReturnPart` with `outcome="retried"`, not a `RetryPromptPart`.
+
+### Quarantined review reader: `agent/review_reader.py`
+- **What:** a separate Agent with **no tools** whose output is a `ReviewSummary`;
+  exposed to the orchestrator only through the `get_reviews_summary` tool.
+- **Why:** the Dual LLM pattern. The model that reads untrusted text (reviews and
+  descriptions, where the injection fixtures live) can't act; the model that can act
+  never sees untrusted text.
+- **How:** the summary has **no free-text field**: `themes`, `red_flags`
+  (`instructions_to_ai`, `off_platform_payment`, `requests_personal_data`,
+  `rating_manipulation`) and `sentiment` are fixed choices, so even a fully compromised
+  reader can't pass "call book now" on (a test requires every field to stay a fixed
+  choice). Reviews are wrapped in `<untrusted_reviews>` and declared data, not
+  instructions. Invalid output is retried once, then the tool **fails closed**
+  (`reviews_unavailable`). The reader shares the run's usage and counts as a model turn.
+  Its model is `ERRAND_REVIEW_MODEL` (default: the main model).
+
+### Agent run loop: `agent/loop.py`
+- **What:** `run_agent(...)` drives the orchestrator with `agent.iter()`;
+  `to_history()` maps the context packet's messages to PydanticAI messages;
+  `trace_model_call()` records one model request.
+- **Why:** hard limits on model turns and a trace of every model call (tokens, latency,
+  estimated cost) need a hook *per request*, not just totals at the end.
+- **How:** before each request `meter.charge_model_turn()` (a request over budget is
+  refused before it is sent); after each response a `model_call` event (agent, model,
+  tokens, latency, cost by the configured `provider:model`, null if unpriced). The review
+  reader's call gets its own `model_call` (tokens taken as the difference on the shared
+  usage). PydanticAI's `UsageLimits` sits 3× above our limits as a backstop and is
+  converted to `LimitExceeded` if it ever trips. In PydanticAI 2.66 `run.usage` is a
+  property.
+
+### Message handler: `agent/handler.py`, `agent/prompts.py`
+- **What:** `MessageHandler.handle(session_id=, user_id=, text=)` → `Reply` (a
+  `RunOutcome` + run id), the single entry point for the CLI and the web API;
+  `SYSTEM_PROMPT` and `instructions(packet)`.
+- **Why:** where "the LLM proposes, the workflow decides" is wired together. Plain yes
+  and no are decided in code without the model; everything else goes to the model,
+  which can only propose. Every path, including limits and errors, ends in a saved,
+  traced outcome.
+- **How:**
+
+```
+user message
+   │
+   ├─ reconcile_once(session)          settle parked side effects first (own run, trigger=reconcile)
+   ├─ save user message                before the run: survives crashes, can be PII-scrubbed
+   │
+   └─ run_with_outcome(trigger=user_message) ──────────────────────────────────────────┐
+        ├─ plain yes + exactly 1 pending card → grant(via=typed) → BookingFlow /       │
+        │                                       ChangeFlow.execute → code-written outcome
+        ├─ plain no + something pending      → decline_pending → code-written reply    │
+        └─ otherwise → ContextBuilder.build (context_sent)                             │
+                       → run_agent(instructions = system + STATE + MEMORIES,           │
+                                   history = recent messages, current one only as prompt)
+                       → card produced and still pending? needs_approval : answered    │
+   ┌──────────────────────────────────────────────────────────────────────────────────┘
+   └─ save reply (with run id)          limits and errors too: every exit has a message
+```
+
+  The system prompt makes the model useful inside the walls (ask for "Still needed",
+  explain trade-offs, never claim an unverified result, call `decline_pending` on a
+  no); none of the safety depends on it. A "yes" with conditions, or a yes while two
+  cards are open, goes to the model, which can't approve, so nothing happens without a
+  plain yes or a button. A duplicate yes after the booking finds nothing pending and is
+  an ordinary message. Two messages in one session at the same time is left to a
+  per-session lock in the API layer.
+
+  Next turn the model sees only its saved *text*, not what code drew. So when code
+  showed suggestions, the saved reply ends with `[The app showed the user N
+  suggestions to review.]` (the count only, never their content; the user's screen
+  shows the reply without it) (BUG-8). Approval cards need no note: STATE reports any
+  pending approval.
+
 ## Run lifecycle
 
 A **run** is one inbound event handled end to end: a user message, an approval click, or
@@ -677,7 +886,7 @@ a proactive event. A booking usually spans several runs:
 |---|---|---|
 | `run_0001` | "plumber this week, mornings, under ₹1500" | `needs_info` (asks for area) |
 | `run_0002` | "Indiranagar" | `needs_approval` (provider, slot, price shown) |
-| `run_0003` | user approves | `booked` / `booking_unverified` |
+| `run_0003` | user approves | `booked` / `unverified` |
 | `run_0004` | proactive: provider cancelled | `needs_approval` (replacement offered) |
 
 ```
@@ -710,13 +919,14 @@ crashes.
 |---|---|
 | `run_started` / `run_finished` | `trigger` / `outcome`, `totals` (calls, tokens, cost, `cost_complete`, `duration_ms`) |
 | `state_transition` | `from`, `to`, `reason` |
-| `model_call` | `model`, `input_tokens`, `output_tokens`, `latency_ms`, `cost_usd` |
-| `context_sent` | budget, tokens per section, memory ids included, excluded ids with reasons, messages included / dropped, state and memory text |
-| `tool_call` | `tool`, `args`, `result`, `status`, `latency_ms`, `error` |
+| `model_call` | `agent` (orchestrator / review-reader), `model`, `input_tokens`, `estimated_input_tokens` (the context guard's estimate; calibration), `output_tokens`, `latency_ms`, `cost_usd` |
+| `context_sent` | budget (total, memories, working), tokens per section incl. `tools`, memory ids included, excluded ids with reasons, messages included / dropped / out of scope, state and memory text |
+| `tool_call` | a provider call: `tool`, `args`, `result`, `status`, `latency_ms`, `error` |
+| `agent_tool` | one of the agent's own tools, as the model called it: `tool`, `args` (as sent; names only for profile tools), `result`, `status` (ok / retry / error), `reason`, `latency_ms` |
 | `approval` | requested / granted / rejected / invalidated, `approval_id`, fingerprint |
 | `memory` | remembered / suggested / confirmed / rejected / forgotten, key, scope, source, status |
 | `profile` | changed field names only (never values) |
-| `limit_hit`, `error` | which limit / error type and message |
+| `limit_hit`, `error` | which limit (`model_turns`, `tool_calls`, `wall_clock`, `context_tokens`) / error type and message |
 
 ## Runtime data
 

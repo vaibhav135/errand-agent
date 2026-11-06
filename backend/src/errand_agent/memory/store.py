@@ -20,7 +20,9 @@ How:  - Three kinds of user information live in three places: profile PII
         and the model can't invent a preference the user never stated.
       - Inferred facts (from code rules over booking history) start
         `pending_confirmation` and never count until the user confirms. A rejected
-        suggestion isn't offered again; a forgotten fact can't be re-inferred.
+        suggestion isn't offered again; a forgotten fact can't be re-inferred; and
+        explicit beats inferred: nothing is suggested for a preference the user has
+        stated themselves (BUG-6).
       - One active fact per (user, key, scope): a new one supersedes the old one
         (`superseded_by` chain). Notes may coexist.
       - Forget wipes value and evidence and keeps a tombstone (key, scope, time).
@@ -216,16 +218,20 @@ class MemoryStore:
         reason: str,
         run: RunTrace | None = None,
     ) -> Memory | None:
-        """Suggest an inferred fact; None if forgotten, rejected or already known."""
+        """Suggest an inferred fact; None if forgotten, rejected, already known, or the
+        user has stated this preference explicitly (explicit beats inferred)."""
         typed = _validate(key, value, scope, topic)
         stored = _to_json(key, typed)
         rows = self._conn.execute(
-            "SELECT status, value FROM memories WHERE user_id = ? AND key = ? AND scope = ?",
+            "SELECT status, value, source FROM memories"
+            " WHERE user_id = ? AND key = ? AND scope = ?",
             (user_id, key, scope),
         ).fetchall()
         for row in rows:
             if row["status"] == "forgotten":
                 return None  # the user asked us to forget this: don't bring it back
+            if key != "note" and row["status"] == "active" and row["source"] == "explicit":
+                return None  # BUG-6: never ask to confirm the opposite of what they said
             if row["value"] == stored and row["status"] in (
                 "active",
                 "pending_confirmation",
