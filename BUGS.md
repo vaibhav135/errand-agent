@@ -15,6 +15,7 @@ listed at the end.
 | 6 | An inference can contradict an explicit preference | medium | fixed |
 | 7 | The token estimate undercounts real tokens by ~45% | high | fixed |
 | 8 | The model doesn't know what code showed the user | medium | fixed |
+| 9 | The test suite runs out of file descriptors on a default Mac | medium | open |
 
 ## 1. Rollback masked the real database error
 - **What broke:** When a write failed in a way that makes SQLite end the transaction
@@ -181,6 +182,25 @@ listed at the end.
   whether they were already *shown*, which was the actual mistake.
 - **Regression test:** `backend/tests/unit/test_agent_tool_tracing.py::test_next_turn_the_model_knows_suggestions_were_shown`
 - **Commits:** repro `9c7b7d3` · fix `1a63b8c`
+
+## 9. The test suite runs out of file descriptors on a default Mac
+- **Status:** open
+- **What broke:** `make test` failed for the user with 14 failures and 17 errors, all
+  `OSError: [Errno 24] Too many open files` or SQLite's "unable to open database
+  file". It passed on the machine running the commit gate.
+- **Why:** the tests never close their SQLite connections. Each WAL connection holds up
+  to 3 files (`.db`, `-wal`, `-shm`), and helpers like `World.mock_exec` / `mock_count`
+  open a new connection on every call. Test objects reference each other in cycles
+  (World -> stores -> connection), so connections are freed only when Python's
+  occasional full garbage collection runs; across the whole session the peak reached
+  ~300 open descriptors. macOS's default limit is 256; the gate's shell allowed
+  1,048,576, which hid it. Under `ulimit -n 256` the gate reproduces the failure.
+  The app itself closes its connections (`Services.close()`).
+- **How found:** the user ran `make test` in a default terminal.
+- **Workaround until fixed:** `ulimit -n 4096` in that terminal.
+- **Fix:** -
+- **Regression test:** -
+- **Commits:** -
 
 ## Not bugs: follow-ups found alongside
 
