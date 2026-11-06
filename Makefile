@@ -24,8 +24,10 @@ dev-frontend: ## Run Vite dev server on :5173
 chat: ## Chat with the live agent in the terminal (needs ERRAND_MODEL + key in backend/.env)
 	cd $(BACKEND) && uv run python -m errand_agent.api.chat
 
+# ulimit: run under macOS's default open-file limit everywhere, so a descriptor leak
+# fails here too, not only on a default Mac (BUG-9).
 test: ## Run backend tests
-	cd $(BACKEND) && uv run pytest
+	cd $(BACKEND) && ulimit -n 256 && uv run pytest
 
 lint: ## Lint + typecheck backend and frontend
 	cd $(BACKEND) && uv run ruff check . && uv run ruff format --check . && uv run pyright
