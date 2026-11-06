@@ -464,6 +464,14 @@ User information comes in three kinds, kept in three places:
   from the DB. `profile` trace events list changed field names, never values (the
   sanitizer can't recognise a phone number, so values never enter an event).
 
+### Conversation: `memory/conversation.py`
+- **What:** `ConversationStore.append / for_session / recent_for_user` over a `messages`
+  table (user and assistant text only; tool calls live in traces and workflow tables).
+- **Why:** the context builder fills its budget from the newest turn backwards, and the
+  seeded long prior conversation spans earlier sessions.
+- **How:** `recent_for_user` returns the user's messages across sessions, newest first;
+  ties within one second keep insertion order.
+
 ### Run outcomes: `workflow/outcomes.py`
 - **What:** `RunOutcome` (kind, user-facing message, optional booking / approval card),
   mappers `for_execution` / `for_change` / `for_limit` / `for_error`, and
