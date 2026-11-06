@@ -27,6 +27,7 @@ from pydantic import ValidationError
 from pydantic_ai import ModelRetry, RunContext
 
 from errand_agent.agent.deps import AgentDeps
+from errand_agent.agent.loop import trace_model_call
 from errand_agent.agent.review_reader import summarise_reviews
 from errand_agent.core.clock import IST
 from errand_agent.memory.store import Memory, MemoryKey, ProvenanceError, Topic
@@ -245,7 +246,18 @@ async def get_reviews_summary(ctx: RunContext[AgentDeps], provider_id: str) -> d
         return {"status": "provider_not_found"}
     if deps.meter is not None:
         deps.meter.charge_model_turn()  # the reader's call counts toward the run's turns
+    # The reader shares this run's usage object, so its own tokens are the difference.
+    before_in, before_out = ctx.usage.input_tokens, ctx.usage.output_tokens
+    started = deps.clock.monotonic()
     summary = await summarise_reviews(details.provider, model=deps.review_model, usage=ctx.usage)
+    trace_model_call(
+        deps,
+        agent="review-reader",
+        model=deps.review_model,
+        input_tokens=ctx.usage.input_tokens - before_in,
+        output_tokens=ctx.usage.output_tokens - before_out,
+        latency_s=deps.clock.monotonic() - started,
+    )
     if summary is None:
         return {"status": "reviews_unavailable"}
     p = details.provider

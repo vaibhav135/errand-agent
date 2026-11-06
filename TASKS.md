@@ -56,7 +56,7 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Model factory: ERRAND_MODEL / ERRAND_REVIEW_MODEL, keys passed explicitly, clear errors
 - [x] Agent tools = workflow commands only (no book / cancel / approve tools), FunctionModel-tested
 - [x] Quarantined review reader: no tools, fixed-list fields only (no free text)
-- [ ] Run loop via `agent.iter`: turn budget, `model_call` traces with tokens and cost
+- [x] Run loop via `agent.iter`: turn budget, `model_call` traces with tokens and cost
 - [ ] Message handler: per-run reconcile, typed yes/no in code (no LLM), context → history,
       persistence (our `messages` table, not PydanticAI's history), outcome
 - [ ] `make chat` CLI for live testing; live smoke test (skipped without a key)

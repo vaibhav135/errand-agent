@@ -715,6 +715,20 @@ stateDiagram-v2
   (`reviews_unavailable`). The reader shares the run's usage and counts as a model turn.
   Its model is `ERRAND_REVIEW_MODEL` (default: the main model).
 
+### Agent run loop: `agent/loop.py`
+- **What:** `run_agent(...)` drives the orchestrator with `agent.iter()`;
+  `to_history()` maps the context packet's messages to PydanticAI messages;
+  `trace_model_call()` records one model request.
+- **Why:** hard limits on model turns and a trace of every model call (tokens, latency,
+  estimated cost) need a hook *per request*, not just totals at the end.
+- **How:** before each request `meter.charge_model_turn()` (a request over budget is
+  refused before it is sent); after each response a `model_call` event (agent, model,
+  tokens, latency, cost by the configured `provider:model`, null if unpriced). The review
+  reader's call gets its own `model_call` (tokens taken as the difference on the shared
+  usage). PydanticAI's `UsageLimits` sits 3× above our limits as a backstop and is
+  converted to `LimitExceeded` if it ever trips. In PydanticAI 2.66 `run.usage` is a
+  property.
+
 ## Run lifecycle
 
 A **run** is one inbound event handled end to end: a user message, an approval click, or
@@ -757,7 +771,7 @@ crashes.
 |---|---|
 | `run_started` / `run_finished` | `trigger` / `outcome`, `totals` (calls, tokens, cost, `cost_complete`, `duration_ms`) |
 | `state_transition` | `from`, `to`, `reason` |
-| `model_call` | `model`, `input_tokens`, `output_tokens`, `latency_ms`, `cost_usd` |
+| `model_call` | `agent` (orchestrator / review-reader), `model`, `input_tokens`, `output_tokens`, `latency_ms`, `cost_usd` |
 | `context_sent` | budget, tokens per section, memory ids included, excluded ids with reasons, messages included / dropped, state and memory text |
 | `tool_call` | `tool`, `args`, `result`, `status`, `latency_ms`, `error` |
 | `approval` | requested / granted / rejected / invalidated, `approval_id`, fingerprint |

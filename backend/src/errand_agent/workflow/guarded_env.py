@@ -83,6 +83,10 @@ class BudgetMeter:
         self.model_turns = 0
         self._committed = 0
 
+    @property
+    def budget(self) -> RunBudget:
+        return self._budget
+
     def elapsed(self) -> float:
         return self._clock.monotonic() - self._started
 
