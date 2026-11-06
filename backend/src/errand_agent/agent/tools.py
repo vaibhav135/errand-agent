@@ -1,13 +1,15 @@
 """Agent tools: the only things the model can do, all of them workflow commands.
 
 What: Tool functions over `RunContext[AgentDeps]`: requirements, search & compare,
-      propose a booking, the user's bookings and slots, start a cancel / reschedule,
-      memories (remember / list / forget / confirm / reject / correct) and profile.
+      propose a booking, decline what's pending, the user's bookings and slots, start a
+      cancel / reschedule, memories (remember / list / forget / confirm / reject /
+      correct) and profile.
 
 Why:  The model understands the user; the workflow decides. There is deliberately no
       tool that books, cancels, reschedules, holds or approves: the model can only
       *propose*, and an approval card is the furthest it can get. Approval itself
-      happens in code (button or typed yes), without the model.
+      happens in code (button or typed yes), without the model. The one approval tool
+      the model has, `decline_pending`, can only take authority away.
 
 How:  - Invalid input (a past date, a slot that wasn't listed, a quote the user never
         said) raises ModelRetry with a readable reason, so the model fixes it instead of
@@ -39,6 +41,7 @@ from errand_agent.providers.models import (
     SearchOk,
     Service,
 )
+from errand_agent.workflow.decline import decline_pending as decline
 from errand_agent.workflow.errands import ABANDONABLE, Errand
 from errand_agent.workflow.ranking import RankedOptions, rank_options
 from errand_agent.workflow.requirements import (
@@ -232,6 +235,27 @@ async def propose_booking(
         "price_inr": d.price_inr,
         "price_changed_from": proposal.price_changed_from,
         "instruction": NOT_YET_BOOKED,
+    }
+
+
+async def decline_pending(ctx: RunContext[AgentDeps]) -> dict[str, Any]:
+    """The user doesn't want what's waiting for their approval ("no", "leave it",
+    "too pricey, skip it"). Withdraws every pending approval card; nothing is booked or
+    changed. Use it only when the user is declining."""
+    deps = ctx.deps
+    declined = decline(deps.conn, deps.approvals, deps.errands, deps.session_id, run=deps.run)
+    if not declined:
+        return {"status": "nothing_pending"}
+    return {
+        "status": "declined",
+        "declined": [
+            {
+                "action": a.details.action,
+                "provider": a.details.provider_name,
+                "slot": _iso(a.details.slot),
+            }
+            for a in declined
+        ],
     }
 
 
@@ -525,6 +549,7 @@ ALL_TOOLS = [
     update_requirements,
     search_and_compare,
     propose_booking,
+    decline_pending,
     get_reviews_summary,
     find_my_bookings,
     available_slots,

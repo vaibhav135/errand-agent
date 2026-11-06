@@ -332,7 +332,7 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
 
 ### Approval gate: `workflow/approvals.py`
 - **What:** `ApprovalDetails`, `fingerprint()`, `ApprovalStore` (request / grant /
-  reject / invalidate / consume), `is_explicit_yes()`.
+  reject / invalidate / consume), `is_explicit_yes()` / `is_explicit_no()`.
 - **Why:** booking, cancelling and rescheduling need explicit confirmation of the exact
   action and material details, enforced in code; any change to provider, slot or price
   invalidates it.
@@ -346,12 +346,23 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
 | `grant` | `pending` only, and only with the fingerprint the user was shown |
 | `consume` | inside the executor's transaction with the idempotency key; `granted` only; current details must still match; single use (repeated confirmations can't run twice). Writes nothing when refusing; the caller invalidates as a separate step |
 | typed "yes" | whole message must be an explicit affirmative; resolves only when exactly one approval is pending. The model never decides whether the user agreed |
+| vocabulary | wide (yup, yesss, ok, haan ji, theek hai, 👍…) but a fixed list matched in code: case, punctuation, emoji modifiers and repeated letters are normalised on both sides ("yesss" = "yes"); a `?` or anything extra disqualifies. Doubtful words stay out ("yo", "ha"): a missed yes costs one tap, a false yes books something |
+| typed "no" | same rules (no, nah, nahi, not now, 👎…). Declining only removes authority, so the model may also decline fuzzier phrasing via `decline_pending` |
 
   **Hash, not signature (deliberate):** sha256 has no key, so the fingerprint detects
   differences but isn't tamper-proof. The trust boundary is that only the workflow
   creates approvals; users can only grant or reject one. An HMAC (keyed hash) would be
   the right addition if approvals ever travelled outside the system, e.g. as
   "click to approve" links in email or SMS.
+
+### Decline: `workflow/decline.py`
+- **What:** `decline_pending(conn, approvals, errands, session_id, run=)`.
+- **Why:** "no" must be as reliable as "yes"; the handler's typed-no fast path and the
+  model's `decline_pending` tool share one operation.
+- **How:** rejects *every* pending approval in the session (the model can't aim it at
+  one card) and moves each errand back (`approval_rejected`: book → comparing, change →
+  collecting), in one transaction. Nothing is booked, cancelled or charged. The provider
+  hold isn't released (the contract has no release call); it expires on its own.
 
 ### Booking flow: `workflow/booking.py`
 - **What:** `BookingFlow.propose(errand, option, slot)` and
@@ -684,12 +695,13 @@ stateDiagram-v2
 ### Agent tools: `agent/tools.py`, `agent/deps.py`, `agent/orchestrator.py`
 - **What:** the orchestrator `Agent[AgentDeps, str]` and its tools, all workflow
   commands: `update_requirements`, `search_and_compare`, `propose_booking`,
-  `find_my_bookings`, `available_slots`, `start_cancel`, `start_reschedule`, `remember`,
+  `decline_pending`, `find_my_bookings`, `available_slots`, `start_cancel`, `start_reschedule`, `remember`,
   `list_memories`, `forget_memory`, `confirm_suggestion`, `reject_suggestion`,
   `correct_memory`, `update_profile`, `add_address`.
 - **Why:** the model understands; the workflow decides. **No tool books, cancels,
   reschedules, holds or approves** (a structural test lists the tool names); the
-  furthest the model can get is an approval card.
+  furthest the model can get is an approval card. Its one approval-related tool,
+  `decline_pending`, can only take authority away.
 - **How:** `AgentDeps` bundles one run's stores, the guarded provider env, trace, meter,
   the user and **their current message** (provenance for `remember` / `update_profile`).
   Invalid input raises `ModelRetry` with a readable reason (past date, unlisted slot,
@@ -729,6 +741,42 @@ stateDiagram-v2
   converted to `LimitExceeded` if it ever trips. In PydanticAI 2.66 `run.usage` is a
   property.
 
+### Message handler: `agent/handler.py`, `agent/prompts.py`
+- **What:** `MessageHandler.handle(session_id=, user_id=, text=)` → `Reply` (a
+  `RunOutcome` + run id), the single entry point for the CLI and the web API;
+  `SYSTEM_PROMPT` and `instructions(packet)`.
+- **Why:** where "the LLM proposes, the workflow decides" is wired together. Plain yes
+  and no are decided in code without the model; everything else goes to the model,
+  which can only propose. Every path, including limits and errors, ends in a saved,
+  traced outcome.
+- **How:**
+
+```
+user message
+   │
+   ├─ reconcile_once(session)          settle parked side effects first (own run, trigger=reconcile)
+   ├─ save user message                before the run: survives crashes, can be PII-scrubbed
+   │
+   └─ run_with_outcome(trigger=user_message) ──────────────────────────────────────────┐
+        ├─ plain yes + exactly 1 pending card → grant(via=typed) → BookingFlow /       │
+        │                                       ChangeFlow.execute → code-written outcome
+        ├─ plain no + something pending      → decline_pending → code-written reply    │
+        └─ otherwise → ContextBuilder.build (context_sent)                             │
+                       → run_agent(instructions = system + STATE + MEMORIES,           │
+                                   history = recent messages, current one only as prompt)
+                       → card produced and still pending? needs_approval : answered    │
+   ┌──────────────────────────────────────────────────────────────────────────────────┘
+   └─ save reply (with run id)          limits and errors too: every exit has a message
+```
+
+  The system prompt makes the model useful inside the walls (ask for "Still needed",
+  explain trade-offs, never claim an unverified result, call `decline_pending` on a
+  no); none of the safety depends on it. A "yes" with conditions, or a yes while two
+  cards are open, goes to the model, which can't approve, so nothing happens without a
+  plain yes or a button. A duplicate yes after the booking finds nothing pending and is
+  an ordinary message. Two messages in one session at the same time is left to a
+  per-session lock in the API layer.
+
 ## Run lifecycle
 
 A **run** is one inbound event handled end to end: a user message, an approval click, or
@@ -738,7 +786,7 @@ a proactive event. A booking usually spans several runs:
 |---|---|---|
 | `run_0001` | "plumber this week, mornings, under ₹1500" | `needs_info` (asks for area) |
 | `run_0002` | "Indiranagar" | `needs_approval` (provider, slot, price shown) |
-| `run_0003` | user approves | `booked` / `booking_unverified` |
+| `run_0003` | user approves | `booked` / `unverified` |
 | `run_0004` | proactive: provider cancelled | `needs_approval` (replacement offered) |
 
 ```
