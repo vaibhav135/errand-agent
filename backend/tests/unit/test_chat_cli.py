@@ -175,6 +175,22 @@ async def test_confirm_and_reject_are_decided_in_code(services: Services) -> Non
     assert "No suggestion 999; see /memories." in terminal.text
 
 
+async def test_hints_use_real_numbers_and_a_bare_confirm_lists_the_choices(
+    services: Services,
+) -> None:
+    memories = MemoryStore(services.agent_db, clock=services.clock, ids=services.ids)
+    first = min(n for n, m in numbered(memories) if m.status == "pending_confirmation")
+    terminal = Terminal("/memories", "/confirm")
+
+    await chat(services, terminal, ScriptedModel())
+
+    assert f"/confirm {first}" in terminal.out[1]  # an example with a real number, not "N"
+    listing = terminal.out[2]  # the bare /confirm
+    assert "Which one?" in listing and f"{first}. Usual electrician" in listing
+    statuses = {m.status for m in memories.all_for_user("user_1") if m.source == "inferred"}
+    assert "pending_confirmation" in statuses  # nothing was decided
+
+
 async def test_unknown_commands_never_reach_the_model(services: Services) -> None:
     terminal = Terminal("/trace", "/quit")
 

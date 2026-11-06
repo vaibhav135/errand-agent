@@ -215,8 +215,8 @@ listed at the end.
 | PydanticAI's startup banner prints in the chat | UX | done: the chat sets `PYDANTIC_AI_NO_BANNER=1` unless already set |
 | No "working…" indicator during a 5–15 s turn, so the user types ahead; those keystrokes echo into the output and are sent as the next messages | UX | done: a "working…" line prints before each run |
 | `list_memories` returns all 48 saved facts, 30 of them personal notes, on every call (~2.6k tokens; called on 3 of 4 turns in one chat) | token efficiency | done: booking-relevant facts plus a count of the 36 personal notes (listed only when asked), ~3,470 -> ~780 tokens; TOON still to try for list-shaped results |
-| The suggestions hint says "/confirm N"; the user typed a literal N, and a bare `/confirm` just errors | UX | show the real numbers ("/confirm 40 · /reject 44"); a bare `/confirm` lists the choices |
-| The model said "I've started the plumber booking", which can read as booked | prompt wording | say "started looking for a plumber"; nothing is a booking until confirmed |
+| The suggestions hint says "/confirm N"; the user typed a literal N, and a bare `/confirm` just errors | UX | done: hints show a real number ("e.g. /confirm 40"); a bare `/confirm` lists the choices and decides nothing |
+| The model said "I've started the plumber booking", which can read as booked | prompt wording | done: the prompt says that before approval it's looking for or proposing, never a booking "started" |
 
 <!-- Template
 ## N. <short title>
