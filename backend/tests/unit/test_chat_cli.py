@@ -2,12 +2,13 @@ import os
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 from pydantic import SecretStr
 
 from errand_agent.api.app import Services, build_handler, build_services
-from errand_agent.api.chat import chat_loop, main, numbered, render_card
+from errand_agent.api.chat import ChatState, chat_loop, main, numbered, render_card
 from errand_agent.core.clock import FakeClock
 from errand_agent.core.config import Settings
 from errand_agent.core.ids import SequentialIdGen
@@ -215,21 +216,43 @@ def test_without_a_key_it_says_what_to_set(app_settings: Settings, app_clock: Fa
     assert "ANTHROPIC_API_KEY" in terminal.text and "backend/.env" in terminal.text
 
 
-def test_ctrl_c_mid_turn_exits_gracefully(
-    app_settings: Settings, app_clock: FakeClock, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    keyed = app_settings.model_copy(update={"anthropic_api_key": SecretStr("sk-ant-test")})
+def interrupt(
+    keyed: Settings, clock: FakeClock, monkeypatch: pytest.MonkeyPatch, *, mid_turn: bool
+) -> tuple[int, str]:
+    """Run main() with a chat that gets Ctrl+C (as asyncio.run raises it), mid-turn or not."""
 
-    async def interrupted(*args: object) -> None:
-        raise KeyboardInterrupt  # what asyncio.run raises after Ctrl+C during a turn
+    async def interrupted(*args: Any) -> None:
+        state: ChatState = args[-1]
+        state.turn_running = mid_turn
+        raise KeyboardInterrupt
 
     monkeypatch.setattr("errand_agent.api.chat._start", interrupted)
     terminal = Terminal()
+    code = main(settings=keyed, clock=clock, read=terminal.read, write=terminal.write)
+    return code, terminal.text
 
-    code = main(settings=keyed, clock=app_clock, read=terminal.read, write=terminal.write)
+
+@pytest.fixture
+def keyed(app_settings: Settings) -> Settings:
+    return app_settings.model_copy(update={"anthropic_api_key": SecretStr("sk-ant-test")})
+
+
+def test_ctrl_c_mid_turn_exits_gracefully(
+    keyed: Settings, app_clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code, text = interrupt(keyed, app_clock, monkeypatch, mid_turn=True)
 
     assert code == 0  # no traceback
-    assert "Interrupted" in terminal.text and "checked with the provider" in terminal.text
+    assert "Interrupted" in text and "checked with the provider" in text
+
+
+def test_ctrl_c_at_the_prompt_just_says_bye(
+    keyed: Settings, app_clock: FakeClock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code, text = interrupt(keyed, app_clock, monkeypatch, mid_turn=False)
+
+    assert code == 0
+    assert "Bye." in text and "in progress" not in text  # nothing was in progress
 
 
 def test_default_models_are_announced(app_settings: Settings, app_clock: FakeClock) -> None:

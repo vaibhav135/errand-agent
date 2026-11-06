@@ -32,6 +32,7 @@ import json
 import os
 import sys
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -153,6 +154,13 @@ def footer(reply: Reply, trace_dir: Path) -> str:
     )
 
 
+@dataclass
+class ChatState:
+    """Whether a turn is running, so Ctrl+C can say what it interrupted."""
+
+    turn_running: bool = False
+
+
 async def chat_loop(
     handler: MessageHandler,
     services: Services,
@@ -160,7 +168,9 @@ async def chat_loop(
     read: Callable[[], str],
     write: Callable[[str], None],
     styled: bool = False,
+    state: ChatState | None = None,
 ) -> None:
+    state = state or ChatState()
     session_id = services.ids.new("sess")
     services.errands.create_session(session_id, user_id=DEMO_USER_ID)
     memories = MemoryStore(services.agent_db, clock=services.clock, ids=services.ids)
@@ -184,7 +194,9 @@ async def chat_loop(
                 write(f"Unknown command {command}. Commands: {', '.join(COMMANDS)}")
             continue
         write(f"{DIM}working…{RESET}" if styled else "working…")  # a turn takes seconds
+        state.turn_running = True
         reply = await handler.handle(session_id=session_id, user_id=DEMO_USER_ID, text=text)
+        state.turn_running = False
         write(reply.outcome.message)
         if reply.outcome.approval is not None:
             write(render_card(reply.outcome.approval))
@@ -200,9 +212,10 @@ async def _start(
     read: Callable[[], str],
     write: Callable[[str], None],
     styled: bool,
+    state: ChatState,
 ) -> None:
     await services.reconciler.reconcile_once()  # restart recovery, as the API does
-    await chat_loop(handler, services, read=read, write=write, styled=styled)
+    await chat_loop(handler, services, read=read, write=write, styled=styled, state=state)
 
 
 def main(
@@ -230,13 +243,19 @@ def main(
         except ModelNotConfigured as exc:
             write(f"Can't start the chat: {exc}")
             return 2
+        state = ChatState()
         try:
-            asyncio.run(_start(services, handler, read, write, styled))
-        except KeyboardInterrupt:  # Ctrl+C during a turn (at the prompt it's handled above)
-            write(
-                "\nInterrupted. Anything that was in progress is checked with the provider"
-                " the next time you start, so nothing is booked twice."
-            )
+            asyncio.run(_start(services, handler, read, write, styled, state))
+        except KeyboardInterrupt:
+            # Inside asyncio.run, Ctrl+C arrives here even at the prompt (asyncio's own
+            # handler fires instead of input() raising), so say what was interrupted.
+            if state.turn_running:
+                write(
+                    "\nInterrupted. Anything that was in progress is checked with the"
+                    " provider the next time you start, so nothing is booked twice."
+                )
+            else:
+                write("\nBye.")
         return 0
     finally:
         services.close()
