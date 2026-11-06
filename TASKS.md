@@ -59,6 +59,10 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [ ] Scripted-model harness (`FunctionModel`) + simulated users
 - [ ] ≥20 scenarios asserting outcomes and invariants
 - [ ] Generated eval table (`evals/results.md`)
+- [ ] Large mock world for scale tests (`make seed-large`, `ERRAND_MOCK_WORLD=large`): deterministic
+      generator (Faker `en_IN` + templates, fixed seed), long booking histories, hundreds of
+      reviews per provider from a curated, committed snippet library; attack fixtures kept.
+      The hand-written 30-provider world stays the default for evals and the demo.
 
 ## Phase 9 — Deliverables
 - [ ] README (setup, run, test, eval)
