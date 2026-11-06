@@ -3,6 +3,7 @@ import re
 import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -13,6 +14,7 @@ from errand_agent.memory.profile import ProfileStore
 from errand_agent.memory.seed import seed_demo_user
 from errand_agent.memory.seedgen import OUTPUT, build_seed
 from errand_agent.memory.store import MemoryStore
+from errand_agent.mocks.seed import load_seed
 from errand_agent.store.db import connect
 from errand_agent.store.migrate import migrate, migrations_for
 from errand_agent.workflow.approvals import ApprovalStore
@@ -60,6 +62,73 @@ def test_seed_meets_the_assignment_minimums() -> None:
 
     assert len(seed["memories"]) >= 50
     assert sum(len(s["messages"]) for s in seed["sessions"]) >= 200
+
+
+# --- the seed tells one consistent story (BUG-2) --------------------------------------------
+
+# Words that state a booking's status or schedule. Bookings have a source of truth (the
+# provider's records, via tools); the seeded transcript must not compete with it.
+BOOKING_CLAIM = re.compile(
+    r"\b(confirmed|booked|scheduled|finished|last booking|booking was)\b", re.IGNORECASE
+)
+
+
+def where_said(seed: dict[str, Any]) -> dict[str, tuple[int, int, int]]:
+    """For each quoted fact: (session position, message position, session days_ago)
+    of the first user message that says it. Sessions are listed oldest first."""
+    found: dict[str, tuple[int, int, int]] = {}
+    for s_pos, session in enumerate(seed["sessions"]):
+        for m_pos, message in enumerate(session["messages"]):
+            if message["role"] != "user":
+                continue
+            for fact in seed["memories"]:
+                quote = fact.get("quote")
+                if quote and quote in message["content"] and fact["id"] not in found:
+                    found[fact["id"]] = (s_pos, m_pos, session["days_ago"])
+    return found
+
+
+@pytest.mark.xfail(strict=True, reason="BUG-2: facts are shuffled into sessions regardless of date")
+def test_facts_are_said_when_they_were_learned() -> None:
+    seed = build_seed()
+    said = where_said(seed)
+    facts = {f["id"]: f for f in seed["memories"]}
+
+    for fact_id, (_, _, session_days_ago) in said.items():  # in the nearest session
+        assert abs(session_days_ago - facts[fact_id]["days_ago"]) <= 5, fact_id
+    for fact in seed["memories"]:  # a correction comes after what it corrects
+        if "replaces" in fact:
+            old, new = said[fact["replaces"]][:2], said[fact["id"]][:2]
+            assert old < new, f"{fact['replaces']} is said after {fact['id']}"
+
+
+@pytest.mark.xfail(strict=True, reason="BUG-2: inferences cite bookings the mock world lacks")
+def test_inferred_reasons_match_the_booking_history() -> None:
+    history = load_seed().history
+
+    for fact in build_seed()["memories"]:
+        if fact.get("source") != "inferred":
+            continue
+        claimed = re.match(r"(\d+) completed bookings with ", fact["reason"])
+        assert claimed, fact["id"]
+        completed = [
+            b
+            for b in history
+            if b.provider_id == fact["value"]["provider_id"] and b.status == "completed"
+        ]
+        assert len(completed) == int(claimed.group(1)), fact["id"]
+
+
+@pytest.mark.xfail(strict=True, reason="BUG-2: canned replies state bookings that don't exist")
+def test_the_seeded_assistant_makes_no_booking_claims() -> None:
+    claims = [
+        m["content"]
+        for s in build_seed()["sessions"]
+        for m in s["messages"]
+        if m["role"] == "assistant" and BOOKING_CLAIM.search(m["content"])
+    ]
+
+    assert claims == []
 
 
 # --- loading ------------------------------------------------------------------------------
