@@ -990,6 +990,11 @@ user message
     local zone; a divider ("Today", "Yesterday", "Wed, 04 Nov") marks a new day. History
     uses the server's stored time (UTC with its offset); new messages take the
     browser's clock when sent or received. Tests pin `TZ=Asia/Kolkata`.
+    While a reply is on its way (BUG-10): typing dots until the first word (a tool's
+    progress line replaces them), then the text with a blinking caret until the final
+    arrives. `useSmoothText` reveals streamed text at a steady pace, because a short
+    reply's chunks land in one burst: each frame shows at least 2 more characters and
+    about 1/12 of what's still hidden, so it never lags the stream by more than ~0.5 s.
   - Trace (`src/components/trace/`, `src/hooks/useTrace.ts`): runs newest first, each
     collapsible under a header (trigger, outcome, calls, tokens, cost, duration;
     "running…" until it finishes); one line per event with its key fact
