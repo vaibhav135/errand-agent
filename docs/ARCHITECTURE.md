@@ -103,7 +103,11 @@ reading the environment would silently miss keys that live in `.env`.
 - **How:** `autocommit=True` (no implicit transactions), WAL, `foreign_keys=ON`,
   `busy_timeout=5000`, `synchronous=NORMAL` (survives process crashes).
   `transaction()` uses `BEGIN IMMEDIATE` so the write lock is taken at BEGIN, and rolls
-  back only if SQLite hasn't already ([BUG-1](../BUGS.md)).
+  back only if SQLite hasn't already ([BUG-1](../BUGS.md)). `atomic()` joins the
+  caller's transaction or opens one, so store methods compose into larger units of work
+  (e.g. hold + approval + state change). `after_commit()` defers side effects such as
+  trace events until the outermost transaction commits and drops them on rollback:
+  traces never report a change that didn't happen.
 
 **Thread rule:** SQLite connections are bound to the thread that created them
 (`check_same_thread`, kept on deliberately). All database work happens on the event-loop

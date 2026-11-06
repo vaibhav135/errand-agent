@@ -7,7 +7,7 @@ import pytest
 from errand_agent.core.clock import FakeClock
 from errand_agent.core.ids import SequentialIdGen
 from errand_agent.providers.models import DateRange
-from errand_agent.store.db import connect
+from errand_agent.store.db import connect, transaction
 from errand_agent.store.migrate import migrate, migrations_for
 from errand_agent.tracing.recorder import TraceEvent, Tracer
 from errand_agent.workflow.errands import (
@@ -243,3 +243,18 @@ def test_architecture_doc_shows_the_current_state_diagram(kind: str) -> None:
     assert render_mermaid(kind) in ARCHITECTURE.read_text(), (  # type: ignore[arg-type]
         f"docs/ARCHITECTURE.md is out of date for '{kind}': paste render_mermaid('{kind}')"
     )
+
+
+def test_rolled_back_transition_is_neither_stored_nor_traced(
+    store: ErrandStore, tracer: Tracer, events: list[TraceEvent], tmp_path: Path
+) -> None:
+    errand = store.create("sess_1", "book")
+    run = tracer.start_run(session_id="sess_1", trigger="test")
+    conn = store._conn
+
+    with pytest.raises(RuntimeError), transaction(conn):
+        store.transition(errand.errand_id, "options_ready", run=run)
+        raise RuntimeError("a later step of the unit of work failed")
+
+    assert store.get(errand.errand_id).state == "collecting"
+    assert [e for e in events if e.type == "state_transition"] == []

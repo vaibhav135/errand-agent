@@ -32,8 +32,6 @@ import hashlib
 import json
 import re
 import sqlite3
-from collections.abc import Iterator
-from contextlib import contextmanager
 from datetime import datetime
 from typing import Literal
 
@@ -41,7 +39,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict
 
 from errand_agent.core.clock import Clock, utc_text
 from errand_agent.core.ids import IdGen
-from errand_agent.store.db import transaction
+from errand_agent.store.db import after_commit, atomic
 from errand_agent.tracing.recorder import RunTrace
 
 Action = Literal["book", "reschedule", "cancel"]
@@ -163,7 +161,7 @@ class ApprovalStore:
         self, errand_id: str, details: ApprovalDetails, *, run: RunTrace | None = None
     ) -> Approval:
         approval_id = self._ids.new("appr")
-        with self._tx():
+        with atomic(self._conn):
             self._invalidate_live(errand_id, reason="superseded by a new request")
             self._conn.execute(
                 "INSERT INTO approvals (approval_id, errand_id, action, fingerprint, details,"
@@ -187,7 +185,7 @@ class ApprovalStore:
         via: Via,
         run: RunTrace | None = None,
     ) -> Approval:
-        with self._tx():
+        with atomic(self._conn):
             current = self.get(approval_id)
             if current.status != "pending":
                 raise ApprovalError(f"approval {approval_id} is {current.status}, not pending")
@@ -199,7 +197,7 @@ class ApprovalStore:
         return self._traced(approval_id, run)
 
     def reject(self, approval_id: str, *, run: RunTrace | None = None) -> Approval:
-        with self._tx():
+        with atomic(self._conn):
             current = self.get(approval_id)
             if current.status != "pending":
                 raise ApprovalError(f"approval {approval_id} is {current.status}, not pending")
@@ -207,7 +205,7 @@ class ApprovalStore:
         return self._traced(approval_id, run)
 
     def invalidate_live(self, errand_id: str, *, reason: str) -> None:
-        with self._tx():
+        with atomic(self._conn):
             self._invalidate_live(errand_id, reason=reason)
 
     def consume(
@@ -232,20 +230,12 @@ class ApprovalStore:
         self._conn.execute(
             "UPDATE approvals SET status = 'consumed' WHERE approval_id = ?", (approval_id,)
         )
+        consumed = self.get(approval_id)
         if run is not None:
-            run.emit("approval", _trace_payload(self.get(approval_id)))
-        return self.get(approval_id)
+            after_commit(self._conn, lambda: run.emit("approval", _trace_payload(consumed)))
+        return consumed
 
     # --- internals --------------------------------------------------------------------
-
-    @contextmanager
-    def _tx(self) -> Iterator[None]:
-        """Join the caller's transaction, or open one."""
-        if self._conn.in_transaction:
-            yield
-        else:
-            with transaction(self._conn):
-                yield
 
     def _decide(
         self,
@@ -271,7 +261,7 @@ class ApprovalStore:
     def _traced(self, approval_id: str, run: RunTrace | None) -> Approval:
         approval = self.get(approval_id)
         if run is not None:
-            run.emit("approval", _trace_payload(approval))
+            after_commit(self._conn, lambda: run.emit("approval", _trace_payload(approval)))
         return approval
 
 

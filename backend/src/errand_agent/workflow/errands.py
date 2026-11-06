@@ -17,7 +17,9 @@ How:  - `next_state(kind, state, event)` looks the move up; anything not in the
         in-flight or parked errand would hide whether something happened).
       - `ErrandStore.transition` updates the state and appends to
         `errand_transitions` in one transaction, then emits a `state_transition`
-        trace event (after commit, so traces only show what really happened).
+        trace event once the outermost transaction commits (`after_commit`), so a
+        transition composed into a larger unit of work that rolls back is never
+        traced.
       - Requirements can only change in ABANDONABLE states; once a side effect is
         under way they are frozen.
       - docs/ARCHITECTURE.md embeds `render_mermaid(kind)` for each kind, and a
@@ -32,7 +34,7 @@ from pydantic import BaseModel, ConfigDict
 
 from errand_agent.core.clock import Clock, utc_text
 from errand_agent.core.ids import IdGen
-from errand_agent.store.db import transaction
+from errand_agent.store.db import after_commit, atomic
 from errand_agent.tracing.recorder import RunTrace
 from errand_agent.workflow.requirements import Requirements
 
@@ -191,7 +193,7 @@ class ErrandStore:
         self._ids = ids
 
     def create_session(self, session_id: str, *, user_id: str) -> None:
-        with transaction(self._conn):
+        with atomic(self._conn):
             self._conn.execute(
                 "INSERT OR IGNORE INTO sessions (session_id, user_id, created_at) VALUES (?, ?, ?)",
                 (session_id, user_id, utc_text(self._clock.now())),
@@ -200,7 +202,7 @@ class ErrandStore:
     def create(self, session_id: str, kind: ErrandKind, *, booking_id: str | None = None) -> Errand:
         now = utc_text(self._clock.now())
         errand_id = self._ids.new("errand")
-        with transaction(self._conn):
+        with atomic(self._conn):
             self._conn.execute(
                 "INSERT INTO errands (errand_id, session_id, kind, state, requirements,"
                 " booking_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
@@ -239,7 +241,7 @@ class ErrandStore:
         self, errand_id: str, event: Event, *, run: RunTrace | None = None, reason: str = ""
     ) -> Errand:
         now = utc_text(self._clock.now())
-        with transaction(self._conn):
+        with atomic(self._conn):
             current = self.get(errand_id)
             new = next_state(current.kind, current.state, event)  # raises -> rollback
             self._conn.execute(
@@ -251,17 +253,15 @@ class ErrandStore:
                 " reason, run_id, at) VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (errand_id, current.state, new, event, reason, run.run_id if run else None, now),
             )
-        if run is not None:  # after commit: traces only show what really happened
-            run.emit(
-                "state_transition",
-                {
+            if run is not None:  # only once committed: traces show what really happened
+                payload = {
                     "errand_id": errand_id,
                     "from": current.state,
                     "to": new,
                     "event": event,
                     "reason": reason,
-                },
-            )
+                }
+                after_commit(self._conn, lambda: run.emit("state_transition", payload))
         return self.get(errand_id)
 
     def history(self, errand_id: str) -> list[tuple[str, str, str, str, str | None]]:
@@ -273,7 +273,7 @@ class ErrandStore:
         return [tuple(r) for r in rows]  # type: ignore[misc]
 
     def set_requirements(self, errand_id: str, requirements: Requirements) -> Errand:
-        with transaction(self._conn):
+        with atomic(self._conn):
             current = self.get(errand_id)
             if current.state not in ABANDONABLE:
                 raise InvalidTransition(
