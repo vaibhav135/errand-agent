@@ -14,7 +14,7 @@ listed at the end.
 | 5 | The agent's own tool calls aren't traced | medium | fixed |
 | 6 | An inference can contradict an explicit preference | medium | fixed |
 | 7 | The token estimate undercounts real tokens by ~45% | high | fixed |
-| 8 | The model doesn't know what code showed the user | medium | open |
+| 8 | The model doesn't know what code showed the user | medium | fixed |
 
 ## 1. Rollback masked the real database error
 - **What broke:** When a write failed in a way that makes SQLite end the transaction
@@ -165,7 +165,7 @@ listed at the end.
 - **Commits:** repro `d3bd25b` · fix `9931c5b`
 
 ## 8. The model doesn't know what code showed the user
-- **Status:** open
+- **Status:** fixed
 - **What broke:** after code drew the two suggestions in a box under its reply, the next
   turn the model told the user "I never actually displayed them, even though I said I
   had", which was false, and offered to show them again.
@@ -174,9 +174,13 @@ listed at the end.
   results don't carry across runs. Approval cards don't have this gap because STATE
   reports "Pending approval: …"; suggestions have no such line.
 - **How found:** the user's second live chat (trace `run_2513f045…`).
-- **Fix:** -
-- **Regression test:** -
-- **Commits:** -
+- **Fix:** when code shows suggestions, the saved reply ends with a code-written note,
+  "[The app showed the user N suggestions to review.]": the count only, never their
+  content, and only in the saved conversation (the user's screen shows the reply
+  without it). A STATE line was rejected: it could say suggestions *exist*, not
+  whether they were already *shown*, which was the actual mistake.
+- **Regression test:** `backend/tests/unit/test_agent_tool_tracing.py::test_next_turn_the_model_knows_suggestions_were_shown`
+- **Commits:** repro `9c7b7d3` · fix `1a63b8c`
 
 ## Not bugs: follow-ups found alongside
 
