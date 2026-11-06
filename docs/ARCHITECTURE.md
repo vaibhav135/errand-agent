@@ -3,7 +3,8 @@
 How the Errand Agent is put together: one definition of each main component (what it
 is, why it exists, how it works). Cross-cutting concepts live here; implementation
 detail lives in each module's docstring, linked below. **Updated in the same commit as
-the component it describes.**
+the component it describes.** Why the less obvious choices were made, and what was
+rejected, is recorded in [DECISIONS.md](DECISIONS.md).
 
 ## Core principle: the LLM proposes, the workflow decides
 

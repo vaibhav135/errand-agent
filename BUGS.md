@@ -11,6 +11,7 @@ listed at the end.
 | 2 | Seeded history contradicts the mock world | high | open |
 | 3 | The context budget isn't a cap | high | open |
 | 4 | Slash commands leak to the model | low | open |
+| 5 | The agent's own tool calls aren't traced | medium | open |
 
 ## 1. Rollback masked the real database error
 - **What broke:** When a write failed in a way that makes SQLite end the transaction
@@ -51,11 +52,15 @@ listed at the end.
   were 6,959, 10,623 and 11,200 input tokens. The `context_sent` event reported 3,500,
   so the trace understates what was actually sent. The assignment asks for a fixed
   per-turn budget.
-- **Why (hypotheses, to confirm in the repro):** (a) the budget covers only our context
-  packet, not the 17 tool definitions sent with every request; (b) tool calls and
-  results accumulate within a run, growing each request; (c) the chars/3.5 estimate may
-  differ from the provider's tokenizer.
+- **Why:** confirmed from the trace: the conversation section is filled from *all* of
+  the user's sessions (201 messages, none dropped), because the whole seeded history fits
+  the budget, so nothing ever limits it. Hypotheses to confirm in the repro: (a) the
+  budget covers only our context packet, not the 17 tool definitions sent with every
+  request; (b) tool calls and results accumulate within a run, growing each request;
+  (c) the chars/3.5 estimate may differ from the provider's tokenizer.
 - **How found:** same trace: `model_call.input_tokens` vs `context_sent.tokens.total`.
+- **Fix direction:** decided after reviewing how robust agents manage context; see
+  `docs/DECISIONS.md`, D1 (session-scoped history, a budget that counts everything).
 - **Fix:** -
 - **Regression test:** -
 - **Commits:** -
@@ -67,6 +72,24 @@ listed at the end.
 - **Why:** `chat_loop` handles only `/quit` and `/exit`; any other text, including
   `/`-prefixed commands, goes to the handler.
 - **How found:** live chat.
+- **Fix:** -
+- **Regression test:** -
+- **Commits:** -
+
+## 5. The agent's own tool calls aren't traced
+- **Status:** open
+- **What broke:** in the first live chat the model mentioned the two pending suggestions
+  (Sparks, CoolBreeze) although the context builder had excluded them. The run had 3
+  model calls but only 1 `tool_call` event (`list_bookings`), so it most likely called
+  `list_memories`, but the trace can't show it. The assignment requires tool names and
+  arguments in every trace.
+- **Why:** only provider calls are traced (through `GuardedToolEnv`); the agent's own
+  tools (`list_memories`, `update_requirements`, `propose_booking`, …) run without any
+  trace event.
+- **How found:** reading the trace while checking what reached the model.
+- **Related:** `list_memories` returns pending suggestions *with their values* to the
+  model. Decided to keep unconfirmed inferences out of the model's context entirely
+  (`docs/DECISIONS.md`, D1); fixed together with this bug.
 - **Fix:** -
 - **Regression test:** -
 - **Commits:** -
