@@ -64,7 +64,8 @@ class AgentDeps:
     context_limit: int | None = None
     fixed_tokens: int = 0
     request_estimate: int | None = None
-    # How list-shaped tool results are written (experiment: agent/toon.py).
+    # How list-shaped tool results are written (agent/toon.py). The handler runs the agent
+    # with "toon" (D3: 31% fewer tokens, same accuracy); "json" keeps unit tests readable.
     result_format: Literal["json", "toon"] = "json"
 
     def _flow_kwargs(self) -> dict[str, object]:

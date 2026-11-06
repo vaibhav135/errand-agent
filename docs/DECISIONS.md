@@ -197,6 +197,23 @@ and estimated units and was wrong. Slimming didn't make a smaller budget possibl
 gave the conversation room: history space within 7,500 rose from ~1,160 to ~1,660
 estimated tokens (about 5 more messages per request).
 
+**TOON: evaluated on a throwaway branch, adopted.** Decision criteria, set before
+measuring: at least 25% fewer real tokens on the results, and the model picks the right
+ids at least as reliably as with JSON.
+- Tokens (`count_tokens`): the bookings list, 1,162 as compact JSON -> 748 as TOON
+  (−36%). TOON measured 1.75 chars/token, *denser* than JSON (2.04): the calibration
+  test caught that the JSON ratio would undercount it, so text tool results get their
+  own ratio (1.6).
+- Accuracy (live, claude-sonnet-5-5): five questions that require reading the right row
+  and copying the exact id ("cancel my AC servicing", "same electrician as last
+  time", "oldest plumbing booking", ...), two runs each: TOON 10/10, JSON 9/10 (its miss
+  answered with a list instead of the id); input tokens per question ~1,058 -> ~725
+  (−31%). A small sample of simple lookups: enough to rule out a reading penalty, not
+  to claim TOON reads better.
+- Scope: `find_my_bookings` and `list_memories` (flat lists); search options stay JSON
+  (nested slot lists are TOON's weak spot). The handler runs the agent with TOON; unit
+  tests that build deps directly stay on JSON for readable assertions.
+
 **Sources:** [Anthropic token counting](https://docs.anthropic.com/en/docs/build-with-claude/token-counting) ·
 [Anthropic tool use pricing and tokens](https://docs.anthropic.com/claude/docs/tool-use-pricing-and-tokens) ·
 [Claude context editing](https://docs.claude.com/en/docs/build-with-claude/context-editing) ·

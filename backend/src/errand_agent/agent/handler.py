@@ -103,7 +103,7 @@ class MessageHandler:
         review_model: Model | None = None,
         budget: RunBudget | None = None,
         context_budget: ContextBudget | None = None,
-        result_format: Literal["json", "toon"] = "json",  # experiment: agent/toon.py
+        result_format: Literal["json", "toon"] = "toon",  # list results as tables: D3
     ) -> None:
         self._result_format: Literal["json", "toon"] = result_format
         self._conn = conn

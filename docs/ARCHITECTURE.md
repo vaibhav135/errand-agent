@@ -555,7 +555,9 @@ User information comes in three kinds, kept in three places:
 - **What:** `select_memories(memories, service=, budget_tokens=)` → included memories,
   every excluded one **with its reason**, the rendered text and its token count.
   `estimate_tokens(text)` = ceil(chars / 2.4); `estimate_json_tokens(text)` =
-  ceil(chars / 1.9) for tool arguments and results; `TOOL_USE_OVERHEAD_TOKENS` = 350.
+  ceil(chars / 1.9) for tool arguments and results; `estimate_toon_tokens(text)` =
+  ceil(chars / 1.6) for tool results written as text (TOON tables, measured 1.75);
+  `TOOL_USE_OVERHEAD_TOKENS` = 350.
 - **Why:** "only relevant, current preferences may reach the model; forgotten facts and
   unconfirmed inferred facts never". Deciding it in code makes it provable per turn.
 - **How:**
@@ -802,7 +804,10 @@ stateDiagram-v2
   required) instead of an `anyOf` with a `null` branch, and descriptions stay short
   (rules live in the system prompt); validation still uses the real types. A test pins
   every tool's parameter names, types and required flags, and caps the total
-  (2,719 -> 2,310 real tokens). Tests drive the agent offline with a scripted `FunctionModel`
+  (2,719 -> 2,310 real tokens). **List results as tables** (`agent/toon.py`, D3):
+  `find_my_bookings` and `list_memories` return TOON (field names once, a line per
+  row) instead of JSON: 36% fewer tokens, ids read as reliably in a live eval; nested
+  results (search options) stay JSON. Tests drive the agent offline with a scripted `FunctionModel`
   and assert database effects. Note for PydanticAI 2.66: a tool's `ModelRetry` is recorded
   as a `ToolReturnPart` with `outcome="retried"`, not a `RetryPromptPart`.
 

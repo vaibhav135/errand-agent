@@ -26,7 +26,7 @@ import math
 
 TEXT_CHARS_PER_TOKEN = 2.4
 JSON_CHARS_PER_TOKEN = 1.9
-TOON_CHARS_PER_TOKEN = 1.6  # experiment/toon: TOON measured 1.75 (denser than JSON)
+TOON_CHARS_PER_TOKEN = 1.6  # TOON tool results measured 1.75: denser than JSON
 TOOL_USE_OVERHEAD_TOKENS = 350
 
 

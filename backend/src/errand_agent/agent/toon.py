@@ -1,4 +1,4 @@
-"""TOON: a compact table encoding for list-shaped tool results (experiment).
+"""TOON: a compact table encoding for list-shaped tool results.
 
 What: `to_toon(name, rows)` -> e.g.
           bookings[2]{booking_id,status}:
@@ -6,9 +6,11 @@ What: `to_toon(name, rows)` -> e.g.
             bk_2,completed
       Field names once, then one line per row, instead of JSON repeating every key.
 
-Why:  Measured on our data, TOON was 27-40% fewer real tokens than compact JSON for
-      flat lists (docs/DECISIONS.md, D3). Being evaluated on the `experiment/toon`
-      branch: kept only if a live eval shows the model still picks the right ids.
+Why:  On our data TOON is ~36% fewer real tokens than compact JSON for the bookings
+      list, and a live eval found the model reads ids from it at least as reliably
+      (10/10 vs JSON's 9/10; docs/DECISIONS.md, D3). Used for find_my_bookings and
+      list_memories; search options stay JSON (their nested slot lists are TOON's
+      weak spot). TOON is denser than JSON, so it has its own token ratio (1.6).
 
 How:  Only for a non-empty list of dicts sharing the same keys; anything else falls
       back to compact JSON (nested data is TOON's weak spot). A cell that is a dict or
