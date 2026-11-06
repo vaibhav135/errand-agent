@@ -100,8 +100,9 @@ Features/refactors: test + impl in one green commit. Bug fixes: `test:` repro co
 - [x] Design note (≤1 page) + annotated timeout-after-success trace excerpt (`docs/DESIGN.md`)
 - [x] BUGS.md finalised (the top 3 in full, the rest as honourable mentions)
 - [x] Raw end-to-end trace in `docs/trace/` (`make trace`: real model, a timeout after success)
-- [ ] Demo recording (3–5 min, chat + trace side by side)
-- [x] AI coding transcript (`transcripts/transcript.md`, the build session; re-export at the
-      very end so it's complete). Exported by a local tool kept out of git from the raw session
+- [x] Demo recording (3–5 min, chat + trace side by side): recorded by the author; the link
+      is sent with the submission email
+- [x] AI coding transcript (`transcripts/transcript.md`, the build session). Exported by a
+      local tool kept out of git from the raw session
       JSONL (also outside git): full user/assistant turns, one line per
       tool call, assignment PDF text omitted, secrets/PII redacted (fails on key-shaped text)
