@@ -14,6 +14,8 @@ How:  - Before each request: `meter.charge_model_turn()`, so a request over the 
       - After each response: a `model_call` event (agent, model, input/output tokens,
         latency, cost). Cost is looked up by the configured model ("provider:name");
         unpriced models give null, which marks the run's totals `cost_complete: false`.
+        The context guard's estimate for the request is recorded beside the provider's
+        real input tokens (`estimated_input_tokens`), so estimate drift is visible.
       - PydanticAI's UsageLimits is set well above our limits as a backstop; if it ever
         trips, it is converted into our LimitExceeded so every limit exit looks the same.
       - Instructions (system + state + memories) and history come from the
@@ -58,6 +60,7 @@ def trace_model_call(
     input_tokens: int,
     output_tokens: int,
     latency_s: float,
+    estimated_input_tokens: int | None = None,
 ) -> None:
     if deps.run is None:
         return
@@ -68,6 +71,7 @@ def trace_model_call(
             "agent": agent,
             "model": key,
             "input_tokens": input_tokens,
+            "estimated_input_tokens": estimated_input_tokens,
             "output_tokens": output_tokens,
             "latency_ms": round(latency_s * 1000),
             "cost_usd": estimate_cost(
@@ -120,6 +124,7 @@ async def run_agent(
                         input_tokens=usage.input_tokens,
                         output_tokens=usage.output_tokens,
                         latency_s=deps.clock.monotonic() - started,
+                        estimated_input_tokens=deps.request_estimate,
                     )
             assert run.result is not None
             return run.result.output

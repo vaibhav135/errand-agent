@@ -18,7 +18,9 @@ How:  - Limits are checked *before* a call starts; a call already in flight is n
         bound it themselves (the executor makes at most a few status checks).
       - Hitting a limit emits a `limit_hit` trace event and raises LimitExceeded;
         the run then ends with a clear outcome for the user.
-      - Model turns are charged by the agent loop (Phase 5) on the same meter.
+      - Model turns are charged by the agent loop (Phase 5) on the same meter, and the
+        agent's context guard reports a request that can't fit the context budget
+        here too (`refuse_context`), so every limit is traced and raised one way.
 """
 
 from collections.abc import Awaitable, Callable, Iterator
@@ -45,7 +47,7 @@ from errand_agent.providers.models import (
 from errand_agent.providers.tool_env import ToolEnv
 from errand_agent.tracing.recorder import RunTrace
 
-LimitName = Literal["model_turns", "tool_calls", "wall_clock"]
+LimitName = Literal["model_turns", "tool_calls", "wall_clock", "context_tokens"]
 
 
 class RunBudget(BaseModel):
@@ -122,6 +124,10 @@ class BudgetMeter:
             self._hit("model_turns", self.model_turns, self._budget.max_model_turns, "model_turn")
         self._check_time("model_turn")
         self.model_turns += 1
+
+    def refuse_context(self, tokens: int, allowed: int) -> None:
+        """A model request would exceed the context budget even after trimming."""
+        self._hit("context_tokens", tokens, allowed, "model_turn")
 
     def _check_time(self, blocked: str) -> None:
         if self.elapsed() > self._budget.max_seconds:

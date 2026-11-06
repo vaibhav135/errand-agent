@@ -6,7 +6,9 @@ shaped that way when the choice wasn't obvious. Newest last.
 
 ## D1. Context: session-scoped history, a budget that counts everything (2026-11-06)
 
-**Status:** accepted; implemented by the BUG-3 fix.
+**Status:** implemented by the BUG-3 fix. How it works now: ARCHITECTURE.md, "Context
+builder" (the budget split: tools ~2,000, system, state, memories ≤600, working room
+1,500, then this session's messages) and "Context guard" (in-run masking).
 
 **Trigger:** the first live chat (BUGS.md, BUG-2 and BUG-3). On a plain "hi", all 201
 seeded messages from 10 past sessions reached the model, and the real request was

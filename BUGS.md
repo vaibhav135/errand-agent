@@ -9,7 +9,7 @@ listed at the end.
 |---|---|---|---|
 | 1 | Rollback masked the real database error | medium | fixed |
 | 2 | Seeded history contradicts the mock world | high | fixed |
-| 3 | The context budget isn't a cap | high | open |
+| 3 | The context budget isn't a cap | high | fixed |
 | 4 | Slash commands leak to the model | low | open |
 | 5 | The agent's own tool calls aren't traced | medium | open |
 | 6 | An inference can contradict an explicit preference | medium | open |
@@ -57,23 +57,30 @@ listed at the end.
 - **Commits:** repro `dae1e17` · fix `c347e46`
 
 ## 3. The context budget isn't a cap
-- **Status:** open
+- **Status:** fixed
 - **What broke:** with `ERRAND_CONTEXT_TOKEN_BUDGET=6000`, one run's real model requests
   were 6,959, 10,623 and 11,200 input tokens. The `context_sent` event reported 3,500,
   so the trace understates what was actually sent. The assignment asks for a fixed
   per-turn budget.
-- **Why:** confirmed from the trace: the conversation section is filled from *all* of
-  the user's sessions (201 messages, none dropped), because the whole seeded history fits
-  the budget, so nothing ever limits it. Hypotheses to confirm in the repro: (a) the
-  budget covers only our context packet, not the 17 tool definitions sent with every
-  request; (b) tool calls and results accumulate within a run, growing each request;
-  (c) the chars/3.5 estimate may differ from the provider's tokenizer.
+- **Why:** the budget only governed the context *packet* the run started with, and even
+  that was filled from the wrong place:
+  1. the conversation came from *all* of the user's sessions (201 messages, none
+     dropped, because the whole seeded history fit), so nothing ever limited it;
+  2. the 17 tool definitions sent with every request (~2,000 tokens) weren't counted;
+  3. each tool call and result in a run was appended to later requests uncapped (the
+     repro measured 2,457 → 5,062 against 4,500).
+  Hypothesis (c), estimate vs. the provider's tokenizer, is now observable rather than
+  guessed: every `model_call` records both numbers.
 - **How found:** same trace: `model_call.input_tokens` vs `context_sent.tokens.total`.
-- **Fix direction:** decided after reviewing how robust agents manage context; see
-  `docs/DECISIONS.md`, D1 (session-scoped history, a budget that counts everything).
-- **Fix:** -
-- **Regression test:** -
-- **Commits:** -
+- **Fix:** decided after reviewing how robust agents manage context (`docs/DECISIONS.md`,
+  D1): history scoped to the current session (earlier sessions logged as out of
+  scope, never sent); the budget counts tool definitions and reserves 1,500 tokens of
+  working room; a context guard before every request masks the run's oldest tool
+  results and, if it still can't fit, ends the run `limit_reached` (`context_tokens`).
+- **Regression test:** `backend/tests/unit/test_context_budget.py` (every request fits,
+  measured by the scripted model itself; tool definitions counted; an unfittable run
+  ends honestly) and `backend/tests/unit/test_memory_seed.py::test_only_the_current_session_reaches_the_model`
+- **Commits:** repro `9874509` · fix `b1ea3fe`
 
 ## 4. Slash commands leak to the model
 - **Status:** open
@@ -124,7 +131,7 @@ listed at the end.
 
 | Item | Kind | Plan |
 |---|---|---|
-| The seeded "long conversation" fits in ~3k tokens, so no message is ever dropped from context: context management is never actually exercised | test-data gap | with BUG-3: a seed or test that really overflows the budget |
+| The seeded "long conversation" fits in ~3k tokens, so no message is ever dropped from context: context management is never actually exercised | test-data gap | addressed by BUG-3: old sessions are now provably out of scope (`messages_out_of_scope`), and trimming within a session is tested with 500 messages; a long-session eval follows in Phase 8 |
 | PydanticAI's startup banner prints in the chat | UX | set `PYDANTIC_AI_NO_BANNER=1` |
 | No "working…" indicator during a 5–15 s turn, so the user types ahead; those keystrokes echo into the output and are sent as the next messages | UX | print a working line before each run |
 

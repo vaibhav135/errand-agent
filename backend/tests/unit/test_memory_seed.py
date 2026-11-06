@@ -191,6 +191,36 @@ def test_one_active_fact_per_key_and_scope(seeded: sqlite3.Connection) -> None:
 # --- the context builder over a lived-in user ------------------------------------------------
 
 
+def builder_for(seeded: sqlite3.Connection, clock: FakeClock, **budget: int) -> ContextBuilder:
+    ids = SequentialIdGen()
+    return ContextBuilder(
+        clock=clock,
+        errands=ErrandStore(seeded, clock=clock, ids=ids),
+        approvals=ApprovalStore(seeded, clock=clock, ids=ids),
+        memories=MemoryStore(seeded, clock=clock, ids=ids),
+        profiles=ProfileStore(seeded, clock=clock, ids=ids),
+        conversation=ConversationStore(seeded, clock=clock, ids=ids),
+        budget=ContextBudget(**budget),
+    )
+
+
+def test_only_the_current_session_reaches_the_model(
+    seeded: sqlite3.Connection, clock: FakeClock
+) -> None:
+    ids = SequentialIdGen()
+    ErrandStore(seeded, clock=clock, ids=ids).create_session("sess_now", user_id=U)
+    conversation = ConversationStore(seeded, clock=clock, ids=ids)
+    conversation.append("sess_now", "user", "hi")
+    conversation.append("sess_now", "assistant", "Hello! How can I help?")
+
+    p = builder_for(seeded, clock).build(
+        user_id=U, session_id="sess_now", errand_id=None, system="sys", run=None
+    )
+
+    assert p.messages == [("user", "hi"), ("assistant", "Hello! How can I help?")]
+    assert p.messages_out_of_scope == 200  # the seeded sessions: stored, never sent
+
+
 def test_context_for_a_plumber_errand_over_the_seeded_user(
     seeded: sqlite3.Connection, clock: FakeClock
 ) -> None:
@@ -218,7 +248,7 @@ def test_context_for_a_plumber_errand_over_the_seeded_user(
     )
 
     assert p.tokens["total"] <= 2500
-    assert p.messages_dropped > 0  # the long history doesn't all fit
+    assert p.messages == [] and p.messages_out_of_scope == 200  # old sessions: never sent
     assert "Earliest start: 10:00" in p.memories and "09:00" not in p.memories
     assert "Budget for plumber: up to ₹1500" in p.memories and "1200" not in p.memories
     assert "ring the bell twice" in p.memories

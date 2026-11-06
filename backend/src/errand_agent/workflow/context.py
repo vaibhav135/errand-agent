@@ -9,16 +9,22 @@ Why:  The assignment: cap the model context at a fixed token budget; only releva
       facts never; log what context was sent each turn and prove it in tests. Our own
       rule adds: profile PII never reaches the model.
 
-How:  Filled in priority order until the budget (ERRAND_CONTEXT_TOKEN_BUDGET) is used:
-      1. system prompt (always)
-      2. state (always): today's date in IST, the current errand (kind, state,
+How:  The budget (ERRAND_CONTEXT_TOKEN_BUDGET) covers *everything* a request carries
+      (docs/DECISIONS.md, D1). Filled in priority order:
+      1. tool definitions (always; measured by the caller from the agent's schemas)
+      2. system prompt (always)
+      3. state (always): today's date in IST, the current errand (kind, state,
          requirements, what's still needed, what can be asked once, any pending
          approval), address labels and areas, and has-phone / has-email flags. This is
          the structured "memory" of the conversation, built from the DB, so older turns
          can be dropped without an LLM summary.
-      3. relevant memories (`select_memories`), capped at ERRAND_MEMORY_TOKEN_BUDGET
-      4. recent conversation, newest first while it fits, then put back in order
-      If 1 + 2 alone exceed the budget, ContextOverflow is raised rather than sending a
+      4. relevant memories (`select_memories`), capped at ERRAND_MEMORY_TOKEN_BUDGET
+      5. working room (reserved, never filled here): the run's own tool calls and
+         results; the agent's context guard enforces the total during the run
+      6. the *current session's* conversation, newest first while it fits, then put
+         back in order. Earlier sessions are never sent: memories, state and tools carry
+         continuity. `messages_out_of_scope` counts them, so the trace proves it.
+      If 1-3 alone exceed the budget, ContextOverflow is raised rather than sending a
       truncated system prompt. Stored history has already been scrubbed of forgotten
       facts and saved PII (memory/scrub.py). Token counts use the deterministic,
       pessimistic estimate, so offline evals see exactly the numbers a live run would.
@@ -48,7 +54,7 @@ MESSAGE_OVERHEAD_TOKENS = 4  # role markers and separators per message
 
 
 class ContextOverflow(Exception):
-    """The system prompt and state alone don't fit the budget."""
+    """The tool definitions, system prompt and state alone don't fit the budget."""
 
 
 class ContextBudget(BaseModel):
@@ -56,6 +62,9 @@ class ContextBudget(BaseModel):
 
     total: int = 6000
     memories: int = 600
+    # Kept free for the run's own tool calls and results (a search, then a proposal);
+    # beyond it, the context guard masks older results rather than fail.
+    working: int = 1500
 
     @classmethod
     def from_settings(cls, settings: Settings) -> "ContextBudget":
@@ -72,7 +81,8 @@ class ContextPacket(BaseModel):
     tokens: dict[str, int]
     memory_ids: list[str]
     excluded_memories: list[tuple[str, ExclusionReason]]
-    messages_dropped: int
+    messages_dropped: int  # this session's messages that didn't fit
+    messages_out_of_scope: int  # the user's messages in other sessions: never sent
 
 
 class ContextBuilder:
@@ -103,12 +113,15 @@ class ContextBuilder:
         errand_id: str | None,
         system: str,
         run: RunTrace | None,
+        tool_tokens: int = 0,
     ) -> ContextPacket:
         errand = self._errands.get(errand_id) if errand_id else None
         state = self._state(user_id, errand)
-        base = estimate_tokens(system) + estimate_tokens(state)
+        base = tool_tokens + estimate_tokens(system) + estimate_tokens(state)
         if base > self._budget.total:
-            raise ContextOverflow(f"system + state need {base} tokens; budget {self._budget.total}")
+            raise ContextOverflow(
+                f"tools + system + state need {base} tokens; budget {self._budget.total}"
+            )
 
         service = errand.requirements.service if errand else None
         selection = select_memories(
@@ -117,11 +130,11 @@ class ContextBuilder:
             budget_tokens=min(self._budget.memories, self._budget.total - base),
         )
 
-        room = self._budget.total - base - selection.tokens
-        history = self._conversation.recent_for_user(user_id)
+        room = max(0, self._budget.total - base - selection.tokens - self._budget.working)
+        history = list(reversed(self._conversation.for_session(session_id)))  # newest first
         kept: list[tuple[str, str]] = []
         used = 0
-        for message in history:  # newest first
+        for message in history:
             cost = estimate_tokens(message.content) + MESSAGE_OVERHEAD_TOKENS
             if used + cost > room:
                 break
@@ -130,6 +143,7 @@ class ContextBuilder:
         kept.reverse()
 
         tokens = {
+            "tools": tool_tokens,
             "system": estimate_tokens(system),
             "state": estimate_tokens(state),
             "memories": selection.tokens,
@@ -145,12 +159,17 @@ class ContextBuilder:
             memory_ids=[m.memory_id for m in selection.included],
             excluded_memories=selection.excluded,
             messages_dropped=len(history) - len(kept),
+            messages_out_of_scope=self._conversation.count_in_other_sessions(user_id, session_id),
         )
         if run is not None:
             run.emit(
                 "context_sent",
                 {
-                    "budget": {"total": self._budget.total, "memories": self._budget.memories},
+                    "budget": {
+                        "total": self._budget.total,
+                        "memories": self._budget.memories,
+                        "working": self._budget.working,
+                    },
                     "tokens": tokens,
                     "memory_ids": packet.memory_ids,
                     "excluded_memories": [
@@ -158,6 +177,7 @@ class ContextBuilder:
                     ],
                     "messages_included": len(kept),
                     "messages_dropped": packet.messages_dropped,
+                    "messages_out_of_scope": packet.messages_out_of_scope,
                     "state": state,
                     "memories": selection.text,
                 },
