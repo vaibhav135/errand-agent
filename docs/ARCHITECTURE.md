@@ -307,6 +307,29 @@ Labels live in the DB for evals only and are never returned through `ToolEnv`.
   rating `(r·n + 4.3·20)/(n + 20)` (so 5.0★ from 3 reviews doesn't beat 4.7★ from
   300), price, earliest slot, id. The model only phrases the reasons.
 
+### Approval gate: `workflow/approvals.py`
+- **What:** `ApprovalDetails`, `fingerprint()`, `ApprovalStore` (request / grant /
+  reject / invalidate / consume), `is_explicit_yes()`.
+- **Why:** booking, cancelling and rescheduling need explicit confirmation of the exact
+  action and material details, enforced in code; any change to provider, slot or price
+  invalidates it.
+- **How:** the fingerprint is sha256 over canonical JSON of (action, provider, slot as
+  UTC text, price, booking). It works like a photocopy of the signed agreement: before
+  acting, compare.
+
+| Step | Rule |
+|---|---|
+| `request` | creates `pending`; supersedes the errand's live approval (DB: one live per errand) |
+| `grant` | `pending` only, and only with the fingerprint the user was shown |
+| `consume` | inside the executor's transaction with the idempotency key; `granted` only; current details must still match; single use (repeated confirmations can't run twice). Writes nothing when refusing; the caller invalidates as a separate step |
+| typed "yes" | whole message must be an explicit affirmative; resolves only when exactly one approval is pending. The model never decides whether the user agreed |
+
+  **Hash, not signature (deliberate):** sha256 has no key, so the fingerprint detects
+  differences but isn't tamper-proof. The trust boundary is that only the workflow
+  creates approvals; users can only grant or reject one. An HMAC (keyed hash) would be
+  the right addition if approvals ever travelled outside the system, e.g. as
+  "click to approve" links in email or SMS.
+
 ### Errand state machine: `workflow/errands.py`
 - **What:** one transition table per errand kind (`book`, `reschedule`, `cancel`),
   `next_state()`, and `ErrandStore` (errands, their requirements and an append-only
